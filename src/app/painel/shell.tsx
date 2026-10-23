@@ -3,20 +3,23 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { ExternalLink, LayoutDashboard, LogOut, Menu, Monitor, Pizza, Receipt, Settings, Ticket, Users, X } from "lucide-react";
+import { Bike, ChefHat, ExternalLink, LayoutDashboard, LogOut, Menu, Monitor, Pizza, Receipt, Settings, Ticket, Users, X, Zap } from "lucide-react";
 import { PavLogo } from "@/components/brand/logo";
 import { ROLE_LABEL } from "@/lib/order-labels";
 import type { Role } from "@/lib/types";
 import { signOut, switchPizzeria } from "./actions";
 
-type Area = "pedidos" | "pdv" | "cardapio" | "configuracoes" | "cupons" | "equipe";
+type Area = "pedidos" | "cozinha" | "entregas" | "pdv" | "cardapio" | "configuracoes" | "cupons" | "equipe" | "automacoes";
 const NAV: { href: string; label: string; icon: typeof Receipt; area?: Area }[] = [
   { href: "/painel", label: "Visão geral", icon: LayoutDashboard },
   { href: "/painel/pedidos", label: "Pedidos", icon: Receipt, area: "pedidos" },
+  { href: "/painel/cozinha", label: "Cozinha", icon: ChefHat, area: "cozinha" },
+  { href: "/painel/entregas", label: "Entregas", icon: Bike, area: "entregas" },
   { href: "/painel/pdv", label: "PDV / Balcão", icon: Monitor, area: "pdv" },
   { href: "/painel/cardapio", label: "Cardápio", icon: Pizza, area: "cardapio" },
   { href: "/painel/cupons", label: "Cupons", icon: Ticket, area: "cupons" },
   { href: "/painel/equipe", label: "Equipe", icon: Users, area: "equipe" },
+  { href: "/painel/automacoes", label: "WhatsApp e automações", icon: Zap, area: "automacoes" },
   { href: "/painel/configuracoes", label: "Configurações", icon: Settings, area: "configuracoes" },
 ];
 

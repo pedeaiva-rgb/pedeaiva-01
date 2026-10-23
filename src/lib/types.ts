@@ -117,9 +117,14 @@ export type Order = {
   notes: string | null;
   eta_min: number | null;
   eta_max: number | null;
+  courier_id: string | null;
+  dispatched_at: string | null;
+  delivered_at: string | null;
   created_at: string;
   updated_at: string;
 };
+
+export type Courier = { id: string; pizzeria_id: string; name: string; phone: string | null; active: boolean; created_at: string };
 
 export type Menu = {
   pizzeria: Pizzeria;

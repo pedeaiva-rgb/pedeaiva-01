@@ -25,3 +25,13 @@ grant usage on schema storage to anon, authenticated, service_role;
 grant select, insert, update, delete on storage.objects to authenticated;
 
 create publication supabase_realtime;
+
+-- pg_net de mentira: em vez de enviar, guarda o pedido de envio para o teste conferir.
+create schema net;
+create table net.calls (id bigserial primary key, url text, body jsonb, headers jsonb);
+create function net.http_post(url text, body jsonb default '{}'::jsonb, params jsonb default '{}'::jsonb, headers jsonb default '{}'::jsonb, timeout_milliseconds integer default 5000)
+returns bigint language sql as $$
+  insert into net.calls (url, body, headers) values (url, body, headers) returning id
+$$;
+grant usage on schema net to service_role;
+grant select on net.calls to service_role;

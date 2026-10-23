@@ -270,3 +270,58 @@ describe("equipe e fotos", () => {
     );
   });
 });
+
+describe("entregas", () => {
+  it("atribui entregador, registra saída e entrega, e bloqueia entregador de outra loja", async () => {
+    const courier = (await one<{ id: string }>(user(OWNER_A), "insert into public.couriers (pizzeria_id, name, phone) values ($1, 'Carlos', '71988887777') returning id", [pzA])).id;
+    const other = (await one<{ id: string }>(user(OWNER_B), "insert into public.couriers (pizzeria_id, name) values ($1, 'Intruso') returning id", [pzB])).id;
+    const o = await createOrder(orderPayload({ fulfillment: "entrega", address: { street: "Rua B", number: "2", neighborhood: "Centro" }, customer_phone: "71933330001" }));
+    expect(await fails(user(KITCHEN_A), "select public.assign_courier($1, $2)", [o.order_id, courier])).toMatch(/Sem permissão/);
+    expect(await fails(user(CASHIER_A), "select public.assign_courier($1, $2)", [o.order_id, other])).toMatch(/não encontrado/);
+    await one(user(CASHIER_A), "select public.assign_courier($1, $2)", [o.order_id, courier]);
+    for (const s of ["confirmado", "preparo", "pronto", "saiu", "entregue"]) await one(user(OWNER_A), "select public.transition_order($1, $2::public.order_status)", [o.order_id, s]);
+    const r = await one<{ courier_id: string; dispatched: boolean; delivered: boolean }>(
+      user(OWNER_A),
+      "select courier_id, dispatched_at is not null dispatched, delivered_at is not null delivered from public.orders where id = $1",
+      [o.order_id],
+    );
+    expect(r).toEqual({ courier_id: courier, dispatched: true, delivered: true });
+    expect(await fails(user(OWNER_A), "select public.assign_courier($1, null)", [o.order_id])).toMatch(/finalizado/);
+  });
+  it("pedido de retirada não recebe entregador; entregador desativado também não", async () => {
+    const off = (await one<{ id: string }>(user(OWNER_A), "insert into public.couriers (pizzeria_id, name, active) values ($1, 'Folga', false) returning id", [pzA])).id;
+    const pickup = await createOrder(orderPayload({ customer_phone: "71933330002" }));
+    expect(await fails(user(OWNER_A), "select public.assign_courier($1, $2)", [pickup.order_id, off])).toMatch(/retirada/);
+    const del = await createOrder(orderPayload({ fulfillment: "entrega", address: { street: "Rua C", number: "3", neighborhood: "Centro" }, customer_phone: "71933330003" }));
+    expect(await fails(user(OWNER_A), "select public.assign_courier($1, $2)", [del.order_id, off])).toMatch(/desativado/);
+  });
+});
+
+describe("avisos para o n8n", () => {
+  const calls = () => rows<{ url: string; body: { evento: string; pedido: Record<string, unknown>; cliente: Record<string, unknown> }; headers: Record<string, string> }>(SERVICE, "select url, body, headers from net.calls order by id");
+  it("desligado não envia nada", async () => {
+    await one(user(OWNER_A), "insert into public.pizzeria_webhooks (pizzeria_id, url, site_url, active) values ($1, 'https://n8n.exemplo.com/webhook/x', 'https://loja.exemplo.com/', false) returning pizzeria_id", [pzA]);
+    const before = (await calls()).length;
+    await createOrder(orderPayload({ customer_phone: "71922220001" }));
+    expect((await calls()).length).toBe(before);
+  });
+  it("ligado envia pedido criado e mudança de status, com segredo e sem endereço", async () => {
+    await one(user(OWNER_A), "update public.pizzeria_webhooks set active = true where pizzeria_id = $1 returning pizzeria_id", [pzA]);
+    const before = (await calls()).length;
+    const o = await createOrder(orderPayload({ fulfillment: "entrega", address: { street: "Rua Secreta", number: "9", neighborhood: "Centro" }, customer_phone: "71922220002", customer_name: "Ana" }));
+    await one(user(CASHIER_A), "select public.transition_order($1, 'confirmado')", [o.order_id]);
+    const sent = (await calls()).slice(before);
+    expect(sent.map((c) => c.body.evento)).toEqual(["pedido.criado", "pedido.status"]);
+    expect(sent[1]!.body.pedido.status).toBe("confirmado");
+    expect(sent[1]!.body.pedido.status_anterior).toBe("novo");
+    expect(sent[0]!.body.cliente).toEqual({ nome: "Ana", telefone: "71922220002", whatsapp: "5571922220002" });
+    expect(sent[0]!.body.pedido.link_acompanhamento).toBe(`https://loja.exemplo.com/pedido/${o.public_token}`);
+    expect(sent[0]!.headers["X-Pede-Ai-Segredo"]).toMatch(/^[0-9a-f]{32}$/);
+    expect(JSON.stringify(sent)).not.toMatch(/Rua Secreta/);
+  });
+  it("outra pizzaria não lê nem altera a configuração", async () => {
+    expect(await rows(user(OWNER_B), "select * from public.pizzeria_webhooks")).toHaveLength(0);
+    expect(await rows(user(OWNER_B), "update public.pizzeria_webhooks set url = 'https://mal.com' returning pizzeria_id")).toHaveLength(0);
+    expect(await rows(user(CASHIER_A), "select * from public.pizzeria_webhooks")).toHaveLength(0);
+  });
+});

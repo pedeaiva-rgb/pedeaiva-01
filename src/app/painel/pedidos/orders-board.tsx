@@ -5,6 +5,7 @@ import { Bell, BellOff, Bike, MessageCircle, Phone, Printer, Store, X } from "lu
 import { toast } from "sonner";
 import { Receipt } from "@/components/receipt";
 import { Drawer, Empty, PageHeader, Spinner } from "@/components/ui";
+import { beep, minutesSince, startOfTodaySP, timeSP } from "@/lib/beep";
 import { dbError } from "@/lib/db-error";
 import { brl } from "@/lib/money";
 import { ACTION_LABEL, CHANNEL_LABEL, nextStatus, PAYMENT_LABEL, PAYMENT_STATUS, STATUS } from "@/lib/order-labels";
@@ -28,30 +29,8 @@ const ROLES_FOR: Record<OrderStatus, Role[]> = {
 const CASHIER: Role[] = ["owner", "manager", "cashier"];
 const MANAGER: Role[] = ["owner", "manager"];
 
-const time = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
-const minutesAgo = (iso: string, now: number) => Math.max(0, Math.round((now - new Date(iso).getTime()) / 60000));
-function startOfTodaySP() {
-  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
-  return new Date(`${day}T00:00:00-03:00`);
-}
-
-/** Bipe curto pelo alto-falante (o navegador só libera som depois de um clique na página). */
-function beep(ctx: AudioContext) {
-  for (const [freq, start] of [
-    [880, 0],
-    [1175, 0.18],
-  ] as const) {
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.frequency.value = freq;
-    g.gain.setValueAtTime(0.0001, ctx.currentTime + start);
-    g.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + start + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + start + 0.16);
-    o.connect(g).connect(ctx.destination);
-    o.start(ctx.currentTime + start);
-    o.stop(ctx.currentTime + start + 0.18);
-  }
-}
+const time = timeSP;
+const minutesAgo = minutesSince;
 
 export function OrdersBoard({ pizzeriaId, pizzeriaName, role }: { pizzeriaId: string; pizzeriaName: string; role: Role }) {
   const sb = browserClient();

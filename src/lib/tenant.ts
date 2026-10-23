@@ -10,11 +10,14 @@ export type Membership = { pizzeria: Pizzeria; role: Role };
 /** O que cada função vê no painel. O banco aplica as mesmas regras de verdade. */
 export const ACCESS = {
   pedidos: ["owner", "manager", "cashier", "kitchen", "driver"],
+  cozinha: ["owner", "manager", "cashier", "kitchen"],
+  entregas: ["owner", "manager", "cashier", "driver"],
   pdv: ["owner", "manager", "cashier"],
   cardapio: ["owner", "manager"],
   configuracoes: ["owner", "manager"],
   cupons: ["owner", "manager"],
   equipe: ["owner"],
+  automacoes: ["owner", "manager"],
 } as const satisfies Record<string, readonly Role[]>;
 
 export const can = (role: Role, area: keyof typeof ACCESS) => (ACCESS[area] as readonly Role[]).includes(role);
