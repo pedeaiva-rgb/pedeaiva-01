@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Bike, Clock, MapPin, Phone, Store } from "lucide-react";
+import { Bike, Clock, MapPin, Phone, Pizza, Store } from "lucide-react";
 import { CartBar } from "@/components/store/cart-button";
 import { ProductImage } from "@/components/store/product-image";
 import { storeStatus } from "@/lib/hours";
-import { getStoreMenu } from "@/lib/menu";
+import { Promotions } from "@/components/store/promotions";
+import { getStoreCoupons, getStoreMenu } from "@/lib/menu";
 import { brl } from "@/lib/money";
 import { sellable, startingPrice } from "@/lib/pricing";
 import type { Menu } from "@/lib/types";
@@ -22,7 +23,7 @@ function deliveryLine(menu: Menu) {
 
 export default async function StorePage({ params }: PageProps<"/[slug]">) {
   const { slug } = await params;
-  const menu = await getStoreMenu(slug);
+  const [menu, coupons] = await Promise.all([getStoreMenu(slug), getStoreCoupons(slug)]);
   if (!menu) notFound();
   const pz = menu.pizzeria;
   const status = storeStatus(pz);
@@ -65,6 +66,8 @@ export default async function StorePage({ params }: PageProps<"/[slug]">) {
         </p>
       )}
 
+      <Promotions slug={slug} coupons={coupons} />
+
       {sections.length === 0 ? (
         <div className="card mt-6 p-10 text-center">
           <Store className="mx-auto h-10 w-10 text-tomato" />
@@ -92,20 +95,75 @@ export default async function StorePage({ params }: PageProps<"/[slug]">) {
             </section>
           )}
 
-          {sections.map((c) => (
-            <section key={c.id} id={`cat-${c.id}`} className="mt-8 scroll-mt-32">
-              <h2 className="text-2xl font-extrabold">{c.name}</h2>
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                {c.products.map((p) => (
-                  <ProductRow key={p.id} slug={slug} menu={menu} id={p.id} />
-                ))}
-              </div>
-            </section>
-          ))}
+          {sections.map((c) => {
+            const pizzas = c.products.filter((p) => p.is_pizza);
+            const others = c.products.filter((p) => !p.is_pizza);
+            return (
+              <section key={c.id} id={`cat-${c.id}`} className="mt-8 scroll-mt-32">
+                <h2 className="text-2xl font-extrabold">{c.name}</h2>
+                {pizzas.length > 0 && (
+                  <>
+                    <p className="mt-1 text-sm text-muted">Escolha o tamanho e depois os sabores.</p>
+                    <PizzaSizes slug={slug} menu={menu} pizzaIds={pizzas.map((p) => p.id)} />
+                    <details className="group mt-3">
+                      <summary className="cursor-pointer list-none text-sm font-bold text-tomato">
+                        <span className="group-open:hidden">Ver os {pizzas.length} sabores ↓</span>
+                        <span className="hidden group-open:inline">Esconder sabores ↑</span>
+                      </summary>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        {pizzas.map((p) => (
+                          <ProductRow key={p.id} slug={slug} menu={menu} id={p.id} />
+                        ))}
+                      </div>
+                    </details>
+                  </>
+                )}
+                {others.length > 0 && (
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    {others.map((p) => (
+                      <ProductRow key={p.id} slug={slug} menu={menu} id={p.id} />
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
         </>
       )}
       <CartBar slug={slug} />
     </>
+  );
+}
+
+/** Um cartão por tamanho, com quantos sabores cabem e o menor preço daquele tamanho. */
+function PizzaSizes({ slug, menu, pizzaIds }: { slug: string; menu: Menu; pizzaIds: string[] }) {
+  const cards = menu.sizes
+    .map((s) => {
+      const prices = menu.prices.filter((x) => x.size_id === s.id && pizzaIds.includes(x.product_id)).map((x) => x.price_cents);
+      return { s, from: prices.length ? Math.min(...prices) : null, count: prices.length };
+    })
+    .filter((c) => c.from != null);
+  if (cards.length === 0) return null;
+  return (
+    <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+      {cards.map(({ s, from, count }) => (
+        <Link key={s.id} href={`/${slug}/pizza/${s.id}`} className="card group flex flex-col p-4 transition hover:-translate-y-0.5">
+          <span className="grid h-11 w-11 place-items-center rounded-2xl bg-charcoal text-dende">
+            <Pizza className="h-5 w-5" />
+          </span>
+          <p className="mt-3 font-brand text-xl leading-tight font-extrabold">{s.name}</p>
+          <p className="text-xs text-muted">
+            {s.description ? `${s.description} · ` : ""}
+            {s.max_flavors > 1 ? `até ${s.max_flavors} sabores` : "1 sabor"}
+          </p>
+          <p className="mt-2 text-sm font-extrabold text-tomato">
+            <span className="text-[11px] font-semibold text-muted">a partir de </span>
+            {brl(from!)}
+          </p>
+          <p className="mt-1 text-[11px] text-muted">{count} sabores</p>
+        </Link>
+      ))}
+    </div>
   );
 }
 

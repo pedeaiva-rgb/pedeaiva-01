@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { publicClient } from "./supabase/server";
-import type { Menu } from "./types";
+import type { Menu, StoreCoupon } from "./types";
 
 /** Cardápio completo de uma pizzaria. `includeHidden` traz também o que está pausado (painel). */
 export async function loadMenu(sb: SupabaseClient, by: { slug: string } | { id: string }, includeHidden = false): Promise<Menu | null> {
@@ -42,3 +42,9 @@ export async function loadMenu(sb: SupabaseClient, by: { slug: string } | { id: 
 
 /** Vitrine pública (uma consulta por requisição). */
 export const getStoreMenu = cache((slug: string) => loadMenu(publicClient(), { slug }));
+
+/** Cupons que a loja marcou para aparecer em destaque. Se a função ainda não existir no banco, não mostra nada. */
+export const getStoreCoupons = cache(async (slug: string): Promise<StoreCoupon[]> => {
+  const { data, error } = await publicClient().rpc("store_coupons", { _slug: slug });
+  return error ? [] : ((data ?? []) as StoreCoupon[]);
+});

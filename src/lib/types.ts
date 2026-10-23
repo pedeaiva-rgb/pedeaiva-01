@@ -70,7 +70,12 @@ export type Coupon = {
   max_uses: number | null;
   uses: number;
   active: boolean;
+  show_in_store: boolean;
+  description: string;
 };
+
+/** Cupom em destaque na loja (o que o visitante pode ver). */
+export type StoreCoupon = Pick<Coupon, "code" | "discount_type" | "value" | "min_order_cents" | "ends_at" | "description">;
 
 export type Address = { street: string; number: string; complement: string; neighborhood: string; reference: string };
 

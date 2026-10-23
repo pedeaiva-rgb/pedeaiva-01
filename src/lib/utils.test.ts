@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { isWithinHours, parseHours, storeStatus } from "./hours";
-import { brl, parseMoney } from "./money";
+import { maskMoney } from "@/components/ui/money-input";
+import { maskPhone } from "@/components/ui/phone-input";
+import { brl, centsToInput, parseMoney } from "./money";
 import { formatBrPhone, normalizeBrPhone } from "./phone";
 
 // Datas em UTC; São Paulo = UTC−3. 2026-10-21 é uma quarta-feira (dia 3).
@@ -17,6 +19,21 @@ describe("telefone", () => {
     ["1234", null],
     ["71 9999-abc", null],
   ])("%s → %s", (raw, out) => expect(normalizeBrPhone(raw)).toBe(out));
+  it.each([
+    ["7", "(7"],
+    ["71", "(71"],
+    ["719", "(71) 9"],
+    ["71999990001", "(71) 99999-0001"],
+    ["7134567890", "(71) 3456-7890"],
+    ["7199999000199999", "(71) 99999-0001"], // para no 11º dígito
+    ["+55 71 99999-0001", "(71) 99999-0001"],
+    ["071 3456-7890", "(71) 3456-7890"],
+    ["abc", ""],
+  ])("máscara: %s → %s", (typed, out) => expect(maskPhone(typed)).toBe(out));
+  it("o telefone mascarado continua válido para o sistema", () => {
+    expect(normalizeBrPhone(maskPhone("71999990001"))).toBe("71999990001");
+    expect(normalizeBrPhone(maskPhone("7134567890"))).toBe("7134567890");
+  });
   it("formata para exibição", () => {
     expect(formatBrPhone("71999990001")).toBe("(71) 99999-0001");
     expect(formatBrPhone("7134567890")).toBe("(71) 3456-7890");
@@ -34,6 +51,18 @@ describe("dinheiro", () => {
     ["1,234", null],
   ])("%s → %s", (raw, out) => expect(parseMoney(raw)).toBe(out));
   it("exibe em reais", () => expect(brl(123456).replace(/\s/g, " ")).toBe("R$ 1.234,56"));
+  it.each([
+    ["4290", "42,90"],
+    ["R$ 42,905", "429,05"], // digitou mais um número depois do valor
+    ["5", "0,05"],
+    ["123456", "1.234,56"],
+    ["000", ""],
+    ["", ""],
+  ])("máscara: %s → %s", (typed, out) => expect(maskMoney(typed)).toBe(out));
+  it("o valor da máscara volta a ser centavos", () => {
+    expect(parseMoney(maskMoney("123456"))).toBe(123456);
+    expect(parseMoney(centsToInput(4290))).toBe(4290);
+  });
 });
 
 describe("horário da loja", () => {

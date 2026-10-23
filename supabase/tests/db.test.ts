@@ -183,6 +183,33 @@ describe("pedidos", () => {
   });
 });
 
+describe("promoções na loja", () => {
+  it("visitante vê só cupons marcados para a loja, ativos e no prazo", async () => {
+    await as(user(OWNER_A), async (tx) => {
+      await tx.query(
+        "insert into public.coupons (pizzeria_id, code, discount_type, value, show_in_store, description) values ($1, 'VITRINE10', 'percentual', 10, true, 'Na primeira compra')",
+        [pzA],
+      );
+      await tx.query("insert into public.coupons (pizzeria_id, code, discount_type, value, show_in_store) values ($1, 'SEGREDO', 'percentual', 50, false)", [pzA]);
+      await tx.query("insert into public.coupons (pizzeria_id, code, discount_type, value, show_in_store, active) values ($1, 'PAUSADO', 'percentual', 5, true, false)", [pzA]);
+      await tx.query(
+        "insert into public.coupons (pizzeria_id, code, discount_type, value, show_in_store, ends_at) values ($1, 'VENCIDO', 'percentual', 5, true, now() - interval '1 day')",
+        [pzA],
+      );
+    });
+    const list = await rows<{ code: string; description: string }>(ANON, "select * from public.store_coupons('pizzaria-a')");
+    expect(list.map((c) => c.code)).toEqual(["VITRINE10"]);
+    expect(list[0]!.description).toBe("Na primeira compra");
+    expect(Object.keys(list[0]!)).not.toContain("uses");
+    expect(await rows(ANON, "select * from public.store_coupons('pizzaria-b')")).toHaveLength(0);
+  });
+  it("gerência liga e desliga o destaque, sem mexer no contador de usos", async () => {
+    const r = await rows(user(OWNER_A), "update public.coupons set show_in_store = false, description = 'x' where pizzeria_id = $1 and code = 'VITRINE10' returning code", [pzA]);
+    expect(r).toHaveLength(1);
+    expect(await fails(user(OWNER_A), "update public.coupons set uses = 0 where pizzeria_id = $1", [pzA])).toMatch(/permission denied/);
+  });
+});
+
 describe("status e pagamento", () => {
   it("segue a ordem permitida, com permissão por função", async () => {
     const o = await createOrder(orderPayload({ customer_phone: "71944440001" }));

@@ -5,6 +5,8 @@ import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Empty, Field, PageHeader, Panel, Spinner, Toggle } from "@/components/ui";
+import { MoneyInput } from "@/components/ui/money-input";
+import { maskPhone, PhoneInput } from "@/components/ui/phone-input";
 import { dbError } from "@/lib/db-error";
 import { parseHours, WEEKDAYS, type OpeningHours } from "@/lib/hours";
 import { brl, centsToInput, parseMoney } from "@/lib/money";
@@ -17,7 +19,7 @@ export function SettingsForm({ pizzeria: pz, zones }: { pizzeria: Pizzeria; zone
   const [f, setF] = useState({
     name: pz.name,
     description: pz.description,
-    phone: pz.phone ?? "",
+    phone: maskPhone(pz.phone ?? ""),
     address: pz.address ?? "",
     accepting_orders: pz.accepting_orders,
     allow_delivery: pz.allow_delivery,
@@ -93,7 +95,7 @@ export function SettingsForm({ pizzeria: pz, zones }: { pizzeria: Pizzeria; zone
               <textarea className="field" rows={2} value={f.description} onChange={set("description")} maxLength={300} placeholder="Ex.: Pizza de forno a lenha desde 1998" />
             </Field>
             <Field label="Telefone / WhatsApp">
-              <input className="field" value={f.phone} onChange={set("phone")} maxLength={25} inputMode="tel" />
+              <PhoneInput value={f.phone} onChange={(v) => setF({ ...f, phone: v })} />
             </Field>
             <Field label="Endereço">
               <input className="field" value={f.address} onChange={set("address")} maxLength={200} />
@@ -114,7 +116,7 @@ export function SettingsForm({ pizzeria: pz, zones }: { pizzeria: Pizzeria; zone
             </Row>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Pedido mínimo (R$)" hint="Vale para a loja online.">
-                <input className="field" inputMode="decimal" value={f.min_order} onChange={set("min_order")} />
+                <MoneyInput value={f.min_order} onChange={(v) => setF({ ...f, min_order: v })} />
               </Field>
               <Field label="Tempo de preparo (min)">
                 <input className="field" inputMode="numeric" value={f.prep_minutes} onChange={set("prep_minutes")} />
@@ -145,7 +147,7 @@ export function SettingsForm({ pizzeria: pz, zones }: { pizzeria: Pizzeria; zone
             </div>
             {f.delivery_mode === "fixa" && (
               <Field label="Taxa de entrega (R$)" hint="Use 0 para entrega grátis.">
-                <input className="field" inputMode="decimal" value={f.delivery_fee} onChange={set("delivery_fee")} />
+                <MoneyInput value={f.delivery_fee} onChange={(v) => setF({ ...f, delivery_fee: v })} />
               </Field>
             )}
             <div className="grid grid-cols-2 gap-3">
@@ -282,7 +284,7 @@ function Zones({ pizzeriaId, zones }: { pizzeriaId: string; zones: DeliveryZone[
         <input className="field" placeholder="Nome da região (ex.: Centro)" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} maxLength={60} required />
         <input className="field" placeholder="Bairros, separados por vírgula" value={f.hoods} onChange={(e) => setF({ ...f, hoods: e.target.value })} required />
         <div className="grid grid-cols-3 gap-2 sm:col-span-2">
-          <input className="field" placeholder="Taxa R$" inputMode="decimal" value={f.fee} onChange={(e) => setF({ ...f, fee: e.target.value })} />
+          <MoneyInput aria-label="Taxa da região" placeholder="Taxa R$ 0,00" value={f.fee} onChange={(v) => setF({ ...f, fee: v })} />
           <input className="field" placeholder="Prazo mín." inputMode="numeric" value={f.min} onChange={(e) => setF({ ...f, min: e.target.value })} />
           <input className="field" placeholder="Prazo máx." inputMode="numeric" value={f.max} onChange={(e) => setF({ ...f, max: e.target.value })} />
         </div>

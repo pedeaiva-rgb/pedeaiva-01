@@ -10,4 +10,5 @@ export function parseMoney(input: string): number | null {
   return Math.round(Number(normalized) * 100);
 }
 
-export const centsToInput = (cents: number) => (cents / 100).toFixed(2).replace(".", ",");
+/** Centavos → "1.234,56" (formato dos campos de dinheiro). */
+export const centsToInput = (cents: number) => (cents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

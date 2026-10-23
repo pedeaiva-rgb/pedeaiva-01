@@ -7,7 +7,9 @@ import { Banknote, Bike, CreditCard, Info, MapPin, QrCode, Store } from "lucide-
 import { toast } from "sonner";
 import { QuoteSummary } from "@/components/store/quote-summary";
 import { Field, Spinner } from "@/components/ui";
-import { toLines, useCart } from "@/lib/cart";
+import { MoneyInput } from "@/components/ui/money-input";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { toLines, useCart, useStoredCoupon } from "@/lib/cart";
 import { parseMoney } from "@/lib/money";
 import { normalizeBrPhone, PHONE_ERROR } from "@/lib/phone";
 import { idempotencyKey, useQuote } from "@/lib/use-quote";
@@ -27,7 +29,9 @@ export function Checkout({ slug, store, neighborhoods }: { slug: string; store: 
   const [mode, setMode] = useState<Fulfillment>(store.allow_delivery ? "entrega" : "retirada");
   const [pay, setPay] = useState<PaymentMethod>("pix");
   const [f, setF] = useState({ name: "", phone: "", street: "", number: "", complement: "", neighborhood: "", reference: "", change: "", notes: "", coupon: "", website: "" });
-  const [coupon, setCoupon] = useState("");
+  // O cupom aplicado fica guardado: vem da vitrine ("Usar") ou do botão Aplicar daqui.
+  const [coupon, setCoupon] = useStoredCoupon(slug);
+  const [typedCoupon, setTypedCoupon] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
 
@@ -81,6 +85,7 @@ export function Checkout({ slug, store, neighborhoods }: { slug: string; store: 
       }
       idempotencyKey(`site:${slug}`, true);
       clear();
+      setCoupon("");
       try {
         localStorage.setItem(`pav-ultimo-pedido:${slug}`, r.token);
       } catch {
@@ -106,10 +111,10 @@ export function Checkout({ slug, store, neighborhoods }: { slug: string; store: 
                 <input className="field" value={f.name} onChange={set("name")} maxLength={80} autoComplete="name" required />
               </Field>
               <Field label="Telefone / WhatsApp com DDD">
-                <input className="field" value={f.phone} onChange={set("phone")} maxLength={25} inputMode="tel" autoComplete="tel" required />
+                <PhoneInput value={f.phone} onChange={(v) => setF({ ...f, phone: v })} required />
               </Field>
             </div>
-            {f.phone.trim().length >= 8 && !phoneOk && <p className="text-xs font-semibold text-danger">{PHONE_ERROR}</p>}
+            {f.phone.replace(/\D/g, "").length >= 10 && !phoneOk && <p className="text-xs font-semibold text-danger">{PHONE_ERROR}</p>}
             {/* Campo invisível contra robôs */}
             <input tabIndex={-1} autoComplete="off" aria-hidden="true" className="hidden" value={f.website} onChange={set("website")} name="website" />
           </section>
@@ -176,7 +181,7 @@ export function Checkout({ slug, store, neighborhoods }: { slug: string; store: 
             </div>
             {pay === "dinheiro" && (
               <Field label="Troco para quanto? (opcional)">
-                <input className="field" value={f.change} onChange={set("change")} inputMode="decimal" placeholder="Ex.: 100,00" />
+                <MoneyInput value={f.change} onChange={(v) => setF({ ...f, change: v })} placeholder="Ex.: R$ 100,00" />
               </Field>
             )}
             <p className="flex items-start gap-2 rounded-xl bg-info-soft p-3 text-xs text-info">
@@ -187,10 +192,37 @@ export function Checkout({ slug, store, neighborhoods }: { slug: string; store: 
           <section className="card space-y-3 p-5">
             <h2 className="text-base font-bold">Cupom e observações</h2>
             <div className="flex gap-2">
-              <input className="field" placeholder="Código do cupom" value={f.coupon} onChange={set("coupon")} maxLength={30} />
-              <button type="button" className="btn-ghost shrink-0" onClick={() => setCoupon(f.coupon.trim())}>
-                Aplicar
-              </button>
+              <input
+                className="field uppercase"
+                placeholder="Código do cupom"
+                value={typedCoupon ?? coupon}
+                onChange={(e) => setTypedCoupon(e.target.value)}
+                maxLength={30}
+              />
+              {coupon && typedCoupon == null && (
+                <button
+                  type="button"
+                  className="btn-ghost shrink-0"
+                  onClick={() => {
+                    setCoupon("");
+                    setTypedCoupon("");
+                  }}
+                >
+                  Remover
+                </button>
+              )}
+              {(typedCoupon != null || !coupon) && (
+                <button
+                  type="button"
+                  className="btn-ghost shrink-0"
+                  onClick={() => {
+                    setCoupon((typedCoupon ?? coupon).trim().toUpperCase());
+                    setTypedCoupon(null);
+                  }}
+                >
+                  Aplicar
+                </button>
+              )}
             </div>
             <Field label="Observações para a loja (opcional)">
               <textarea className="field" rows={2} value={f.notes} onChange={set("notes")} maxLength={300} placeholder="Ex.: interfone com defeito, ligar ao chegar" />

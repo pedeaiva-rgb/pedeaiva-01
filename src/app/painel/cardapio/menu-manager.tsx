@@ -2,10 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowDown, ArrowUp, Archive, ImagePlus, Pencil, Plus, Star, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Archive, ImagePlus, Pencil, Plus, Sparkles, Star, Trash2 } from "lucide-react";
+import { ImportDrawer } from "./import-drawer";
 import { toast } from "sonner";
 import { ProductImage } from "@/components/store/product-image";
 import { Drawer, Empty, Field, PageHeader, Panel, Spinner, Toggle } from "@/components/ui";
+import { MoneyInput } from "@/components/ui/money-input";
 import { dbError } from "@/lib/db-error";
 import { uploadProductImage } from "@/lib/image-upload";
 import { brl, centsToInput, parseMoney } from "@/lib/money";
@@ -63,14 +65,19 @@ export function MenuManager({ menu }: { menu: Menu }) {
 function Products({ menu }: { menu: Menu }) {
   const { run } = useSave();
   const [editing, setEditing] = useState<Product | "novo" | null>(null);
+  const [importing, setImporting] = useState(false);
   const sb = browserClient();
   return (
     <>
-      <div className="mb-4 flex justify-end">
+      <div className="mb-4 flex flex-wrap justify-end gap-2">
+        <button className="btn-ghost !py-2" onClick={() => setImporting(true)}>
+          <Sparkles className="h-4 w-4 text-tomato" /> Importar com IA
+        </button>
         <button className="btn !py-2" onClick={() => setEditing("novo")} disabled={menu.categories.length === 0}>
           <Plus className="h-4 w-4" /> Novo produto
         </button>
       </div>
+      {importing && <ImportDrawer pizzeriaId={menu.pizzeria.id} onClose={() => setImporting(false)} />}
       {menu.categories.map((c) => {
         const list = menu.products.filter((p) => p.category_id === c.id);
         return (
@@ -261,13 +268,13 @@ function ProductForm({ menu, product, onClose }: { menu: Menu; product: Product 
                   {s.name}
                   {!s.active && <span className="block text-[10px] text-muted">tamanho oculto</span>}
                 </span>
-                <input className="field" inputMode="decimal" placeholder="R$" value={prices[s.id] ?? ""} onChange={(e) => setPrices({ ...prices, [s.id]: e.target.value })} />
+                <MoneyInput aria-label={`Preço ${s.name}`} value={prices[s.id] ?? ""} onChange={(v) => setPrices({ ...prices, [s.id]: v })} />
               </div>
             ))}
           </div>
         ) : (
           <Field label="Preço (R$)">
-            <input className="field" inputMode="decimal" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} />
+            <MoneyInput value={f.price} onChange={(v) => setF({ ...f, price: v })} />
           </Field>
         )}
         <label className="flex items-center justify-between gap-3 text-sm font-semibold">
@@ -423,6 +430,24 @@ function Sizes({ menu }: { menu: Menu }) {
 }
 
 // ---------------- Adicionais ----------------
+/** Preço editável na própria lista: salva ao sair do campo, se mudou. */
+function InlineMoney({ label, cents, onCommit }: { label: string; cents: number; onCommit: (cents: number) => void }) {
+  const [v, setV] = useState(centsToInput(cents));
+  return (
+    <MoneyInput
+      aria-label={label}
+      className="field !py-2"
+      value={v}
+      onChange={setV}
+      onBlur={(cur) => {
+        const c = parseMoney(cur || "0");
+        if (c == null) return toast.error("Preço inválido");
+        if (c !== cents) onCommit(c);
+      }}
+    />
+  );
+}
+
 function Extras({ menu }: { menu: Menu }) {
   const { run, busy } = useSave();
   const sb = browserClient();
@@ -440,16 +465,10 @@ function Extras({ menu }: { menu: Menu }) {
               maxLength={60}
               onBlur={(e) => e.target.value.trim() && e.target.value.trim() !== x.name && run(() => sb.from("extras").update({ name: e.target.value.trim() }).eq("id", x.id), "Adicional salvo")}
             />
-            <input
-              aria-label="Preço do adicional"
-              className="field !py-2"
-              inputMode="decimal"
-              defaultValue={centsToInput(x.price_cents)}
-              onBlur={(e) => {
-                const c = parseMoney(e.target.value);
-                if (c == null) return toast.error("Preço inválido");
-                if (c !== x.price_cents) run(() => sb.from("extras").update({ price_cents: c }).eq("id", x.id), "Preço salvo");
-              }}
+            <InlineMoney
+              label={`Preço de ${x.name}`}
+              cents={x.price_cents}
+              onCommit={(c) => run(() => sb.from("extras").update({ price_cents: c }).eq("id", x.id), "Preço salvo")}
             />
             <label className="hidden items-center gap-2 text-xs font-semibold sm:flex">
               <input type="checkbox" checked={x.pizza_only} onChange={(e) => run(() => sb.from("extras").update({ pizza_only: e.target.checked }).eq("id", x.id))} /> Só para pizza
@@ -479,7 +498,7 @@ function Extras({ menu }: { menu: Menu }) {
         }}
       >
         <input className="field" placeholder="Novo adicional" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} maxLength={60} />
-        <input className="field" placeholder="R$" inputMode="decimal" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} />
+        <MoneyInput aria-label="Preço do novo adicional" value={f.price} onChange={(v) => setF({ ...f, price: v })} />
         <button className="btn !px-4" disabled={!f.name.trim() || !f.price || busy}>
           <Plus className="h-4 w-4" />
         </button>

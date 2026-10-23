@@ -64,18 +64,19 @@ export function OrdersBoard({ pizzeriaId, pizzeriaName, role }: { pizzeriaId: st
   const [sound, setSound] = useState(false);
   const audio = useRef<AudioContext | null>(null);
 
-  const load = useCallback(async () => {
+  const fetchOrders = useCallback(async (): Promise<Row[] | null> => {
     let q = sb.from("orders").select("*, order_items(*)").eq("pizzeria_id", pizzeriaId).order("created_at", { ascending: false }).limit(300);
     if (period === "abertos") q = q.not("status", "in", "(entregue,cancelado)").gte("created_at", new Date(Date.now() - 3 * 864e5).toISOString());
     if (period === "hoje") q = q.gte("created_at", startOfTodaySP().toISOString());
     if (period === "7d") q = q.gte("created_at", new Date(Date.now() - 7 * 864e5).toISOString());
     const { data, error } = await q;
-    if (error) setFailed(true);
-    else {
-      setFailed(false);
-      setOrders(data as Row[]);
-    }
+    return error ? null : (data as Row[]);
   }, [sb, pizzeriaId, period]);
+  const apply = useCallback((rows: Row[] | null) => {
+    setFailed(!rows);
+    if (rows) setOrders(rows);
+  }, []);
+  const load = useCallback(async () => apply(await fetchOrders()), [apply, fetchOrders]);
 
   const onNewOrder = useEffectEvent((n: number) => {
     toast.success(`Novo pedido #${n}`, { duration: 8000 });
@@ -85,8 +86,12 @@ export function OrdersBoard({ pizzeriaId, pizzeriaName, role }: { pizzeriaId: st
 
   useEffect(() => {
     // Primeira carga e troca de período.
-    void load();
-  }, [load]);
+    let alive = true;
+    fetchOrders().then((rows) => alive && apply(rows));
+    return () => {
+      alive = false;
+    };
+  }, [fetchOrders, apply]);
 
   useEffect(() => {
     const ch = sb

@@ -84,5 +84,43 @@ export function useCart(slug: string) {
   return { items, count, previewSubtotal, add, setQty, clear };
 }
 
+// ---------- Cupom escolhido na vitrine ----------
+const couponKey = (slug: string) => `pav-cupom:${slug}`;
+const couponListeners = new Set<() => void>();
+
+function readCoupon(slug: string): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return localStorage.getItem(couponKey(slug)) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/** Cupom que o cliente tocou em "Usar" na vitrine; o checkout já começa com ele. */
+export function useStoredCoupon(slug: string) {
+  const code = useSyncExternalStore(
+    (cb) => {
+      couponListeners.add(cb);
+      return () => couponListeners.delete(cb);
+    },
+    () => readCoupon(slug),
+    () => "",
+  );
+  const save = useCallback(
+    (next: string) => {
+      try {
+        if (next) localStorage.setItem(couponKey(slug), next);
+        else localStorage.removeItem(couponKey(slug));
+      } catch {
+        // sem armazenamento: o cliente digita o código no checkout
+      }
+      for (const l of couponListeners) l();
+    },
+    [slug],
+  );
+  return [code, save] as const;
+}
+
 export const toLines = (items: CartItem[]): CartLine[] =>
   items.map((i) => ({ product_id: i.product_id, size_id: i.size_id, flavor_ids: i.flavor_ids, extra_ids: i.extra_ids, qty: i.qty, note: i.note }));

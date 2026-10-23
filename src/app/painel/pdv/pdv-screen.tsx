@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { ProductBuilder } from "@/components/store/product-builder";
 import { QuoteSummary } from "@/components/store/quote-summary";
 import { Drawer, Empty, Field, Spinner } from "@/components/ui";
+import { MoneyInput } from "@/components/ui/money-input";
+import { PhoneInput } from "@/components/ui/phone-input";
 import { toLines, type CartItem } from "@/lib/cart";
 import { brl, parseMoney } from "@/lib/money";
 import { CHANNEL_LABEL, PAYMENT_LABEL } from "@/lib/order-labels";
@@ -162,9 +164,15 @@ export function PdvScreen({ menu }: { menu: Menu }) {
         </div>
         <div className="grid grid-cols-2 gap-2">
           <input className="field !py-2" placeholder={mode === "entrega" ? "Nome" : "Nome (opcional)"} value={f.name} onChange={set("name")} maxLength={80} />
-          <input className="field !py-2" placeholder={mode === "entrega" ? "Telefone" : "Telefone (opcional)"} inputMode="tel" value={f.phone} onChange={set("phone")} maxLength={25} />
+          <PhoneInput
+            aria-label="Telefone do cliente"
+            className="field !py-2"
+            placeholder={mode === "entrega" ? "Telefone" : "Telefone (opcional)"}
+            value={f.phone}
+            onChange={(v) => setF({ ...f, phone: v })}
+          />
         </div>
-        {!phoneOk && <p className="text-xs font-semibold text-danger">{PHONE_ERROR}</p>}
+        {!phoneOk && f.phone.replace(/\D/g, "").length >= 10 && <p className="text-xs font-semibold text-danger">{PHONE_ERROR}</p>}
         {mode === "entrega" && (
           <div className="grid grid-cols-[1fr_80px] gap-2">
             <input className="field !py-2" placeholder="Rua" value={f.street} onChange={set("street")} maxLength={120} />
@@ -181,7 +189,7 @@ export function PdvScreen({ menu }: { menu: Menu }) {
           ))}
         </div>
         <div className="grid grid-cols-2 gap-2">
-          {pay === "dinheiro" && <input className="field !py-2" placeholder="Troco para (R$)" inputMode="decimal" value={f.change} onChange={set("change")} />}
+          {pay === "dinheiro" && <MoneyInput aria-label="Troco para" className="field !py-2" placeholder="Troco para R$" value={f.change} onChange={(v) => setF({ ...f, change: v })} />}
           <input className="field !py-2" placeholder="Cupom" value={f.coupon} onChange={set("coupon")} maxLength={30} />
         </div>
         <Field label="Observação">

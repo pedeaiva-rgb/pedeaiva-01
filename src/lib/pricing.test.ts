@@ -94,6 +94,8 @@ describe("cupom", () => {
     max_uses: 2,
     uses: 0,
     active: true,
+    show_in_store: false,
+    description: "",
   };
   it("percentual e valor fixo, nunca maior que o subtotal", () => {
     expect(applyCoupon(c, 5000)).toEqual({ ok: true, discount_cents: 500 });

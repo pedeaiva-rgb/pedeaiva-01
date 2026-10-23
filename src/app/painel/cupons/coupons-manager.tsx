@@ -2,16 +2,17 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Plus, Ticket, Trash2 } from "lucide-react";
+import { Megaphone, Plus, Ticket, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Empty, Field, PageHeader, Panel, Spinner, Toggle } from "@/components/ui";
+import { MoneyInput } from "@/components/ui/money-input";
 import { dbError } from "@/lib/db-error";
 import { brl, parseMoney } from "@/lib/money";
 import { normalizeCouponCode } from "@/lib/pricing";
 import { browserClient } from "@/lib/supabase/client";
 import type { Coupon } from "@/lib/types";
 
-const EMPTY = { code: "", type: "percentual" as Coupon["discount_type"], value: "", min: "", maxUses: "", start: "", end: "" };
+const EMPTY = { code: "", type: "percentual" as Coupon["discount_type"], value: "", min: "", maxUses: "", start: "", end: "", show: false, description: "" };
 const dateBR = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 /** Data do campo (AAAA-MM-DD) no começo ou no fim do dia em São Paulo. */
 const spDay = (d: string, end: boolean) => (d ? new Date(`${d}T${end ? "23:59:59" : "00:00:00"}-03:00`).toISOString() : null);
@@ -39,7 +40,7 @@ export function CouponsManager({ pizzeriaId, coupons }: { pizzeriaId: string; co
   const sb = browserClient();
   const [f, setF] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
-  const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
+  const set = (k: Exclude<keyof typeof EMPTY, "show">) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
 
   const run = async (fn: () => PromiseLike<{ error: unknown }>, ok: string) => {
     setBusy(true);
@@ -58,7 +59,8 @@ export function CouponsManager({ pizzeriaId, coupons }: { pizzeriaId: string; co
     e.preventDefault();
     const code = normalizeCouponCode(f.code);
     if (!/^[A-Z0-9_-]{3,30}$/.test(code)) return toast.error("O código precisa ter de 3 a 30 letras, números, hífen ou sublinhado, sem espaços.");
-    const value = Number(f.value.replace(",", "."));
+    // Em R$ o campo vem como "1.234,56"; em % vem como "10" ou "12,5".
+    const value = f.type === "valor" ? (parseMoney(f.value || "0") ?? 0) / 100 : Number(f.value.replace(",", "."));
     if (!(value > 0)) return toast.error("Informe o valor do desconto.");
     if (f.type === "percentual" && value > 100) return toast.error("O desconto em porcentagem vai até 100%.");
     const min = f.min.trim() ? parseMoney(f.min) : 0;
@@ -77,6 +79,8 @@ export function CouponsManager({ pizzeriaId, coupons }: { pizzeriaId: string; co
           max_uses: maxUses,
           starts_at: spDay(f.start, false),
           ends_at: spDay(f.end, true),
+          show_in_store: f.show,
+          description: f.description.trim(),
         }),
       `Cupom ${code} criado`,
     );
@@ -108,6 +112,19 @@ export function CouponsManager({ pizzeriaId, coupons }: { pizzeriaId: string; co
                       <p className="text-[11px] text-muted">
                         {c.uses} uso(s){c.max_uses != null ? ` de ${c.max_uses}` : ""}
                       </p>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() =>
+                          run(
+                            () => sb.from("coupons").update({ show_in_store: !c.show_in_store }).eq("id", c.id),
+                            c.show_in_store ? `${c.code} saiu do destaque da loja` : `${c.code} agora aparece em destaque na loja`,
+                          )
+                        }
+                        className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${c.show_in_store ? "bg-tomato-soft text-tomato-deep" : "bg-sand text-muted hover:text-ink"}`}
+                      >
+                        <Megaphone className="h-3 w-3" /> {c.show_in_store ? "Em destaque na loja" : "Mostrar na loja"}
+                      </button>
                     </div>
                     <Toggle
                       checked={c.active}
@@ -142,18 +159,22 @@ export function CouponsManager({ pizzeriaId, coupons }: { pizzeriaId: string; co
             </Field>
             <div className="grid grid-cols-2 gap-2">
               <Field label="Tipo">
-                <select className="field" value={f.type} onChange={set("type")}>
+                <select className="field" value={f.type} onChange={(e) => setF({ ...f, type: e.target.value as Coupon["discount_type"], value: "" })}>
                   <option value="percentual">% de desconto</option>
                   <option value="valor">Valor fixo (R$)</option>
                 </select>
               </Field>
               <Field label={f.type === "percentual" ? "Desconto (%)" : "Desconto (R$)"}>
-                <input className="field" inputMode="decimal" value={f.value} onChange={set("value")} placeholder={f.type === "percentual" ? "10" : "5,00"} required />
+                {f.type === "percentual" ? (
+                  <input className="field" inputMode="decimal" value={f.value} onChange={set("value")} placeholder="10" required />
+                ) : (
+                  <MoneyInput value={f.value} onChange={(v) => setF({ ...f, value: v })} required />
+                )}
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <Field label="Pedido mínimo (R$)">
-                <input className="field" inputMode="decimal" value={f.min} onChange={set("min")} placeholder="opcional" />
+                <MoneyInput value={f.min} onChange={(v) => setF({ ...f, min: v })} placeholder="opcional" />
               </Field>
               <Field label="Limite de usos">
                 <input className="field" inputMode="numeric" value={f.maxUses} onChange={set("maxUses")} placeholder="sem limite" />
@@ -167,6 +188,18 @@ export function CouponsManager({ pizzeriaId, coupons }: { pizzeriaId: string; co
                 <input type="date" className="field" value={f.end} onChange={set("end")} />
               </Field>
             </div>
+            <label className="flex items-start gap-2 rounded-2xl bg-sand/60 p-3 text-sm">
+              <input type="checkbox" className="mt-1" checked={f.show} onChange={(e) => setF({ ...f, show: e.target.checked })} />
+              <span>
+                <span className="font-semibold">Mostrar em destaque na loja</span>
+                <span className="block text-xs text-muted">Aparece no topo do cardápio e o cliente aplica com um toque. Deixe desmarcado para cupons que você manda só para alguns clientes.</span>
+              </span>
+            </label>
+            {f.show && (
+              <Field label="Chamada do destaque (opcional)">
+                <input className="field" value={f.description} onChange={set("description")} maxLength={120} placeholder="Ex.: Na sua primeira compra" />
+              </Field>
+            )}
             <button className="btn w-full" disabled={busy}>
               {busy ? <Spinner className="h-4 w-4" /> : <Plus className="h-4 w-4" />} Criar cupom
             </button>
