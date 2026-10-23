@@ -1,26 +1,202 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+ * Identidade visual "Pede aí e vá".
+ * Marca: tomate, carvão, creme e dendê; títulos em Bricolage Grotesque.
+ * Telas: fundo creme, cartões bem arredondados, botões em pílula; texto em Plus Jakarta Sans.
+ */
+@theme {
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-brand: var(--font-bricolage), var(--font-jakarta), ui-sans-serif, sans-serif;
+
+  --color-tomato: #e4472d;
+  --color-tomato-deep: #b8321c;
+  --color-tomato-soft: #fce9e4;
+  --color-charcoal: #16181b;
+  --color-graphite: #2a2d31;
+  --color-cream: #f5efe4;
+  --color-paper: #fffcf6;
+  --color-dende: #f0a830;
+  --color-dende-soft: #fdf2dc;
+
+  --color-background: #f7f2ea;
+  --color-surface: #fffcf6;
+  --color-ink: #16181b;
+  --color-muted: #6b6760;
+  --color-sand: #efe8dc;
+  --color-line: #e6ded1;
+
+  --color-success: #2b7a4b;
+  --color-success-soft: #e2f2e8;
+  --color-warning: #a8670f;
+  --color-warning-soft: #fdf2dc;
+  --color-info: #2f63a8;
+  --color-info-soft: #e5edf8;
+  --color-danger: #c4321c;
+
+  --radius-card: 1.5rem;
+  --shadow-soft: 0 1px 2px rgb(22 24 27 / 0.04), 0 10px 28px -12px rgb(22 24 27 / 0.16);
+  --shadow-lift: 0 12px 30px -12px rgb(228 71 45 / 0.45);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    background: var(--color-background);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-brand);
+    letter-spacing: -0.02em;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-tomato);
+    outline-offset: 2px;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@utility card {
+  background: var(--color-surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-soft);
+}
+
+@utility btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  padding: 0.7rem 1.25rem;
+  font-weight: 700;
+  font-size: 0.9rem;
+  background: var(--color-tomato);
+  color: var(--color-paper);
+  box-shadow: var(--shadow-lift);
+  transition:
+    background-color 0.15s,
+    transform 0.15s;
+  &:hover {
+    background: var(--color-tomato-deep);
+  }
+  &:active {
+    transform: scale(0.97);
+  }
+  &:disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+}
+
+@utility btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  padding: 0.65rem 1.15rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border: 1px solid var(--color-line);
+  transition: background-color 0.15s;
+  &:hover {
+    background: var(--color-sand);
+  }
+  &:disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+}
+
+@utility btn-dark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  padding: 0.7rem 1.25rem;
+  font-weight: 700;
+  font-size: 0.9rem;
+  background: var(--color-charcoal);
+  color: var(--color-cream);
+  transition: background-color 0.15s;
+  &:hover {
+    background: var(--color-graphite);
+  }
+  &:disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+}
+
+@utility chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 9999px;
+  padding: 0.45rem 0.95rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  transition: all 0.15s;
+  &[data-active="true"] {
+    background: var(--color-tomato-soft);
+    border-color: var(--color-tomato);
+    color: var(--color-tomato-deep);
+  }
+}
+
+@utility field {
+  width: 100%;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 0.9rem;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.9rem;
+  outline: none;
+  &:focus {
+    border-color: var(--color-tomato);
+    box-shadow: 0 0 0 3px rgb(228 71 45 / 0.15);
+  }
+  &:disabled {
+    background: var(--color-sand);
+  }
+}
+
+@utility eyebrow {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-tomato);
+}
+
+/* Comprovante do PDV: na impressão aparece só ele. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #comprovante,
+  #comprovante * {
+    visibility: visible;
+  }
+  #comprovante {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 80mm;
+    padding: 4mm;
+    color: #000;
+  }
 }

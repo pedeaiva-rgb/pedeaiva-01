@@ -1,36 +1,41 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pede aí e vá
 
-## Getting Started
+Cardápio online, pedidos e PDV para pizzarias. Next.js + Supabase.
 
-First, run the development server:
+## Rodar no computador
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abra http://localhost:3000. Sem o banco conectado, só a página inicial funciona; as outras mostram um aviso.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Conectar o banco (Supabase)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Crie um projeto em https://supabase.com (o plano gratuito serve).
+2. No projeto, abra **SQL Editor**, cole todo o conteúdo de `supabase/migrations/20261022000000_inicial.sql` e clique em **Run**.
+3. Em **Project Settings → API Keys**, copie a URL do projeto, a chave _publishable_ e a chave _secret_.
+4. Copie `.env.example` para `.env.local` e preencha:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+   - `SUPABASE_SECRET_KEY` (só no servidor; nunca coloque no Git)
+5. Em **Authentication → URL Configuration**, coloque `http://localhost:3000` em _Site URL_ e adicione `http://localhost:3000/auth/confirmar` em _Redirect URLs_.
+6. Reinicie o `npm run dev`, crie sua conta em **Criar minha loja** e confirme o e-mail.
 
-## Learn More
+## Endereços
 
-To learn more about Next.js, take a look at the following resources:
+| Página | Endereço |
+| --- | --- |
+| Página inicial | `/` |
+| Loja de uma pizzaria | `/<endereço-da-loja>` |
+| Acompanhamento do pedido | `/pedido/<código>` |
+| Painel (pedidos, PDV, cardápio) | `/painel` |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Testes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm test
+```
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Os testes do banco aplicam a migração num Postgres embutido (sem Docker) e conferem isolamento entre pizzarias, criação de pedido, cupons, pagamentos e permissões.
