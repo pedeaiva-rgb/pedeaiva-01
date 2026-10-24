@@ -43,7 +43,8 @@ export const CHANNEL_LABEL: Record<Channel, string> = { site: "Loja online", bal
 export const ROLE_LABEL: Record<Role, string> = {
   owner: "Proprietário",
   manager: "Gerente",
-  cashier: "Atendente / caixa",
+  cashier: "Caixa",
+  attendant: "Atendente",
   kitchen: "Cozinha",
   driver: "Entregador",
 };

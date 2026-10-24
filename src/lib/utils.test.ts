@@ -4,6 +4,24 @@ import { maskMoney } from "@/components/ui/money-input";
 import { maskPhone } from "@/components/ui/phone-input";
 import { brl, centsToInput, parseMoney } from "./money";
 import { formatBrPhone, normalizeBrPhone } from "./phone";
+import { hideCpf, maskCpf, validCpf } from "./cpf";
+
+describe("CPF", () => {
+  it.each([
+    ["529.982.247-25", true],
+    ["52998224725", true],
+    ["529.982.247-24", false],
+    ["111.111.111-11", false],
+    ["1234", false],
+    ["", false],
+  ])("%s válido? %s", (raw, ok) => expect(validCpf(raw)).toBe(ok));
+  it("máscara e ocultação", () => {
+    expect(maskCpf("529")).toBe("529");
+    expect(maskCpf("5299822")).toBe("529.982.2");
+    expect(maskCpf("52998224725999")).toBe("529.982.247-25");
+    expect(hideCpf("52998224725")).toBe("***.982.247-**");
+  });
+});
 
 // Datas em UTC; São Paulo = UTC−3. 2026-10-21 é uma quarta-feira (dia 3).
 const sp = (isoLocal: string) => new Date(`${isoLocal}-03:00`);

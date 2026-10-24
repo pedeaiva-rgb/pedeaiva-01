@@ -11,5 +11,5 @@ export default async function PdvPage() {
   const t = (await getTenant())!;
   if (!can(t.role, "pdv")) return <NoAccess />;
   const menu = await loadMenu(await createClient(), { id: t.pizzeria.id });
-  return <PdvScreen menu={menu!} />;
+  return <PdvScreen menu={menu!} canReceive={t.role !== "attendant"} />;
 }

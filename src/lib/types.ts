@@ -1,5 +1,5 @@
 /** Formato das linhas do banco (supabase/migrations). */
-export type Role = "owner" | "manager" | "cashier" | "kitchen" | "driver";
+export type Role = "owner" | "manager" | "cashier" | "attendant" | "kitchen" | "driver";
 export type OrderStatus = "novo" | "confirmado" | "preparo" | "pronto" | "saiu" | "entregue" | "cancelado";
 export type Fulfillment = "entrega" | "retirada";
 export type Channel = "site" | "balcao" | "telefone" | "whatsapp";

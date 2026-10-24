@@ -325,3 +325,83 @@ describe("avisos para o n8n", () => {
     expect(await rows(user(CASHIER_A), "select * from public.pizzeria_webhooks")).toHaveLength(0);
   });
 });
+
+describe("equipe por link de convite", () => {
+  const MOTO = "00000000-0000-4000-8000-0000000000d1";
+  const ATEND = "00000000-0000-4000-8000-0000000000d2";
+  const CPF = "52998224725";
+  let code = "";
+  beforeAll(async () => {
+    await db.query("insert into auth.users (id, email) values ($1, 'moto@x.com'), ($2, 'atende@x.com')", [MOTO, ATEND]);
+  });
+
+  it("só o dono vê e troca o link", async () => {
+    code = (await one<{ code: string }>(user(OWNER_A), "select * from public.team_invite($1)", [pzA])).code;
+    expect(code).toMatch(/^[0-9a-f]{32}$/);
+    expect(await fails(user(CASHIER_A), "select * from public.team_invite($1)", [pzA])).toMatch(/Sem permissão/);
+    expect(await fails(user(OWNER_B), "select public.reset_team_invite($1)", [pzA])).toMatch(/Sem permissão/);
+    expect(await rows(ANON, "select * from public.invite_info($1)", [code])).toEqual([{ pizzeria_name: expect.stringMatching(/^Pizzaria A/), pizzeria_slug: "pizzaria-a" }]);
+    const novo = (await one<{ c: string }>(user(OWNER_A), "select public.reset_team_invite($1) c", [pzA])).c;
+    expect(await rows(ANON, "select * from public.invite_info($1)", [code])).toHaveLength(0);
+    code = novo;
+  });
+
+  it("pedido de acesso confere CPF e telefone e só o dono vê", async () => {
+    expect(await fails(user(MOTO), "select public.request_join($1, 'João Moto', '11111111111', '71988887777')", [code])).toMatch(/CPF inválido/);
+    expect(await fails(user(MOTO), "select public.request_join($1, 'João Moto', $2, '123')", [code, CPF])).toMatch(/Telefone/);
+    expect(await fails(ANON, "select public.request_join($1, 'João Moto', $2, '71988887777')", [code, CPF])).toMatch(/permission denied/);
+    expect(await fails(user(MOTO), "select public.request_join('naoexiste', 'João Moto', $1, '71988887777')", [CPF])).toMatch(/não vale mais/);
+    const r = await one<{ n: string }>(user(MOTO), "select public.request_join($1, 'João Moto', '529.982.247-25', '(71) 98888-7777') n", [code]);
+    expect(r.n).toMatch(/^Pizzaria A/);
+    expect(await rows(user(OWNER_A), "select full_name, email, cpf, phone, status from public.join_requests where user_id = $1", [MOTO])).toEqual([
+      { full_name: "João Moto", email: "moto@x.com", cpf: CPF, phone: "71988887777", status: "pendente" },
+    ]);
+    expect(await rows(user(MOTO), "select id from public.join_requests")).toHaveLength(1);
+    expect(await rows(user(CASHIER_A), "select id from public.join_requests")).toHaveLength(0);
+    expect(await rows(user(OWNER_B), "select id from public.join_requests")).toHaveLength(0);
+    expect(await fails(user(MOTO), "update public.join_requests set status = 'aprovado'")).toMatch(/permission denied/);
+  });
+
+  it("aprovar como entregador cria o acesso e o cadastro de entregador", async () => {
+    const req = (await one<{ id: string }>(user(OWNER_A), "select id from public.join_requests where user_id = $1", [MOTO])).id;
+    expect(await fails(user(CASHIER_A), "select public.approve_join($1, 'driver')", [req])).toMatch(/Sem permissão/);
+    expect(await fails(user(OWNER_A), "select public.approve_join($1, 'owner')", [req])).toMatch(/função da equipe/);
+    await one(user(OWNER_A), "select public.approve_join($1, 'driver')", [req]);
+    expect(await one(user(OWNER_A), "select role, display_name from public.members where pizzeria_id = $1 and user_id = $2", [pzA, MOTO])).toEqual({
+      role: "driver",
+      display_name: "João Moto",
+    });
+    expect(await one(user(OWNER_A), "select name, phone, active from public.couriers where user_id = $1", [MOTO])).toEqual({ name: "João Moto", phone: "71988887777", active: true });
+    expect(await fails(user(OWNER_A), "select public.approve_join($1, 'kitchen')", [req])).toMatch(/já foi respondido/);
+    expect(await fails(user(MOTO), "select public.request_join($1, 'João Moto', $2, '71988887777')", [code, CPF])).toMatch(/já faz parte/);
+  });
+
+  it("deixar de ser entregador desativa o cadastro de entregador", async () => {
+    await one(user(OWNER_A), "update public.members set role = 'kitchen' where pizzeria_id = $1 and user_id = $2 returning user_id", [pzA, MOTO]);
+    expect((await one<{ active: boolean }>(user(OWNER_A), "select active from public.couriers where user_id = $1", [MOTO])).active).toBe(false);
+    await one(user(OWNER_A), "update public.members set role = 'driver' where pizzeria_id = $1 and user_id = $2 returning user_id", [pzA, MOTO]);
+    expect(await rows(user(OWNER_A), "select active from public.couriers where user_id = $1", [MOTO])).toEqual([{ active: true }]);
+  });
+
+  it("recusado pode pedir de novo; atendente confirma pedido mas não recebe pagamento", async () => {
+    await one(user(ATEND), "select public.request_join($1, 'Bia Atende', $2, '71977776666')", [code, CPF]);
+    const req = (await one<{ id: string }>(user(OWNER_A), "select id from public.join_requests where user_id = $1", [ATEND])).id;
+    await one(user(OWNER_A), "select public.reject_join($1)", [req]);
+    expect(await rows(user(ATEND), "select status from public.join_requests")).toEqual([{ status: "recusado" }]);
+    await one(user(ATEND), "select public.request_join($1, 'Bia Atende', $2, '71977776666')", [code, CPF]);
+    expect(await rows(user(ATEND), "select status from public.join_requests")).toEqual([{ status: "pendente" }]);
+    await one(user(OWNER_A), "select public.approve_join($1, 'attendant')", [req]);
+    const o = await createOrder(orderPayload());
+    await one(user(ATEND), "select public.transition_order($1, 'confirmado')", [o.order_id]);
+    expect(await fails(user(ATEND), "select public.register_payment($1, 'pix')", [o.order_id])).toMatch(/Sem permissão/);
+  });
+
+  it("link desligado para de aceitar pedidos", async () => {
+    await one(user(OWNER_A), "select public.set_team_invite_active($1, false)", [pzA]);
+    expect(await rows(ANON, "select * from public.invite_info($1)", [code])).toHaveLength(0);
+  });
+
+  it("endereço de loja reservado para o convite", async () => {
+    expect(await fails(user(OWNER_B), "select public.create_pizzeria('Convite', 'convite')")).toMatch(/pizzerias_slug_reservado|check/);
+  });
+});

@@ -20,7 +20,8 @@ import { placePdvOrder, quotePdvOrder } from "./actions";
 type Channel = "balcao" | "telefone" | "whatsapp";
 const EMPTY = { name: "", phone: "", street: "", number: "", complement: "", neighborhood: "", reference: "", change: "", notes: "", coupon: "" };
 
-export function PdvScreen({ menu }: { menu: Menu }) {
+/** canReceive: o atendente lança o pedido, mas o recebimento fica com o caixa. */
+export function PdvScreen({ menu, canReceive }: { menu: Menu; canReceive: boolean }) {
   const pz = menu.pizzeria.id;
   const [cat, setCat] = useState("todas");
   const [q, setQ] = useState("");
@@ -200,7 +201,7 @@ export function PdvScreen({ menu }: { menu: Menu }) {
           {error && <p className="text-xs font-semibold text-danger">{error}</p>}
           {quote ? <QuoteSummary quote={quote} fulfillment={mode} /> : <p className="text-sm text-muted">Total: —</p>}
         </div>
-        {quote && (
+        {quote && canReceive && (
           <label className="flex items-start gap-2 text-xs">
             <input type="checkbox" className="mt-0.5" checked={receivedNow} onChange={(e) => setReceivedNow(e.target.checked)} />
             Recebi {brl(quote.total_cents)} agora ({PAYMENT_LABEL[pay]}). Deixe desmarcado se o cliente paga na entrega ou retirada.

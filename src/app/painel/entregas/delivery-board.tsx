@@ -14,8 +14,8 @@ import { browserClient } from "@/lib/supabase/client";
 import type { Courier, Order, OrderItem, Role } from "@/lib/types";
 
 type Row = Order & { order_items: Pick<OrderItem, "id" | "name" | "size_name" | "qty">[] };
-const ASSIGN: Role[] = ["owner", "manager", "cashier"];
-const DISPATCH: Role[] = ["owner", "manager", "cashier", "driver"];
+const ASSIGN: Role[] = ["owner", "manager", "cashier", "attendant"];
+const DISPATCH: Role[] = ["owner", "manager", "cashier", "attendant", "driver"];
 const MANAGE: Role[] = ["owner", "manager"];
 
 const mapsLink = (o: Row) =>

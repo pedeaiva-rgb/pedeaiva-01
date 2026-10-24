@@ -19,12 +19,12 @@ type Period = "abertos" | "hoje" | "7d";
 /** Espelho de public.roles_for_transition (o banco é quem decide). */
 const ROLES_FOR: Record<OrderStatus, Role[]> = {
   novo: [],
-  confirmado: ["owner", "manager", "cashier"],
+  confirmado: ["owner", "manager", "cashier", "attendant"],
   preparo: ["owner", "manager", "cashier", "kitchen"],
   pronto: ["owner", "manager", "cashier", "kitchen"],
-  saiu: ["owner", "manager", "cashier", "driver"],
-  entregue: ["owner", "manager", "cashier", "driver"],
-  cancelado: ["owner", "manager", "cashier"],
+  saiu: ["owner", "manager", "cashier", "attendant", "driver"],
+  entregue: ["owner", "manager", "cashier", "attendant", "driver"],
+  cancelado: ["owner", "manager", "cashier", "attendant"],
 };
 const CASHIER: Role[] = ["owner", "manager", "cashier"];
 const MANAGER: Role[] = ["owner", "manager"];
