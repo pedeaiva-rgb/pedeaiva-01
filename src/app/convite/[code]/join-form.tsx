@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { Field, Spinner } from "@/components/ui";
+import { PasswordInput } from "@/components/ui/password-input";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { maskCpf, validCpf } from "@/lib/cpf";
 import { normalizeBrPhone } from "@/lib/phone";
@@ -117,10 +118,10 @@ export function JoinForm({ code, email }: { code: string; email: string | null }
       {!logged && (
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Senha" hint="Pelo menos 8 caracteres.">
-            <input className="field" type="password" required minLength={8} maxLength={72} autoComplete="new-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} />
+            <PasswordInput required minLength={8} maxLength={72} autoComplete="new-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} />
           </Field>
           <Field label="Repita a senha">
-            <input className="field" type="password" required minLength={8} maxLength={72} autoComplete="new-password" value={f.password2} onChange={(e) => setF({ ...f, password2: e.target.value })} />
+            <PasswordInput required minLength={8} maxLength={72} autoComplete="new-password" value={f.password2} onChange={(e) => setF({ ...f, password2: e.target.value })} />
           </Field>
         </div>
       )}

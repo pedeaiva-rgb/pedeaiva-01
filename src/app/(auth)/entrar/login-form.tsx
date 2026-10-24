@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Field, Spinner } from "@/components/ui";
+import { PasswordInput } from "@/components/ui/password-input";
 import { browserClient } from "@/lib/supabase/client";
 
 export function LoginForm({ next }: { next: string }) {
@@ -32,7 +33,7 @@ export function LoginForm({ next }: { next: string }) {
         <input className="field" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
       </Field>
       <Field label="Senha">
-        <input className="field" type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <PasswordInput required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
       </Field>
       <button className="btn w-full" disabled={busy}>
         {busy && <Spinner className="h-4 w-4" />} Entrar
