@@ -1,19 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useEffectEvent, useState } from "react";
-import { Bike, CheckCircle2, MapPin, MessageCircle, Phone, Plus, Send } from "lucide-react";
+import { Bike, CheckCircle2, HandCoins, MapPin, MessageCircle, Phone, Plus, Send } from "lucide-react";
 import { toast } from "sonner";
 import { Empty, Field, PageHeader, Panel, Spinner, Toggle } from "@/components/ui";
+import { MoneyInput } from "@/components/ui/money-input";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { minutesSince, startOfTodaySP, timeSP } from "@/lib/beep";
 import { dbError } from "@/lib/db-error";
-import { brl } from "@/lib/money";
-import { PAYMENT_LABEL, PAYMENT_STATUS, STATUS } from "@/lib/order-labels";
+import { brl, centsToInput, parseMoney } from "@/lib/money";
+import { COURIER_PAY_LABEL, PAYMENT_LABEL, PAYMENT_STATUS, STATUS } from "@/lib/order-labels";
 import { formatBrPhone, normalizeBrPhone } from "@/lib/phone";
 import { browserClient } from "@/lib/supabase/client";
-import type { Courier, Order, OrderItem, Role } from "@/lib/types";
+import type { Courier, CourierPay, Order, OrderItem, Role } from "@/lib/types";
 
 type Row = Order & { order_items: Pick<OrderItem, "id" | "name" | "size_name" | "qty">[] };
+/** Entrega feita e ainda não acertada com o entregador. */
+type Open = Pick<Order, "id" | "number" | "courier_id" | "courier_pay_cents" | "courier_cash_cents" | "delivered_at">;
 const ASSIGN: Role[] = ["owner", "manager", "cashier", "attendant"];
 const DISPATCH: Role[] = ["owner", "manager", "cashier", "attendant", "driver"];
 const MANAGE: Role[] = ["owner", "manager"];
@@ -23,7 +26,8 @@ const mapsLink = (o: Row) =>
 
 export function DeliveryBoard({ pizzeriaId, role }: { pizzeriaId: string; role: Role }) {
   const sb = browserClient();
-  const [tab, setTab] = useState<"fila" | "entregadores">("fila");
+  const [tab, setTab] = useState<"fila" | "entregadores" | "acerto">("fila");
+  const [open, setOpen] = useState<Open[]>([]);
   const [orders, setOrders] = useState<Row[] | null>(null);
   const [couriers, setCouriers] = useState<Courier[]>([]);
   const [live, setLive] = useState(false);
@@ -33,7 +37,7 @@ export function DeliveryBoard({ pizzeriaId, role }: { pizzeriaId: string; role: 
     // Em aberto de qualquer dia recente + o que foi entregue hoje.
     const today = startOfTodaySP().toISOString();
     const since = new Date(Date.now() - 2 * 864e5).toISOString();
-    const [o, c] = await Promise.all([
+    const [o, c, s] = await Promise.all([
       sb
         .from("orders")
         .select("*, order_items(id,name,size_name,qty)")
@@ -43,16 +47,26 @@ export function DeliveryBoard({ pizzeriaId, role }: { pizzeriaId: string; role: 
         .or(`status.in.(confirmado,preparo,pronto,saiu),delivered_at.gte.${today}`)
         .order("created_at"),
       sb.from("couriers").select("*").eq("pizzeria_id", pizzeriaId).order("name"),
+      sb
+        .from("orders")
+        .select("id,number,courier_id,courier_pay_cents,courier_cash_cents,delivered_at")
+        .eq("pizzeria_id", pizzeriaId)
+        .eq("status", "entregue")
+        .not("courier_id", "is", null)
+        .is("settled_at", null)
+        .order("delivered_at"),
     ]);
     if (o.error || c.error) return null;
-    return { orders: o.data as Row[], couriers: c.data as Courier[] };
+    // Sem a migração do painel do entregador, o acerto só fica vazio.
+    return { orders: o.data as Row[], couriers: c.data as Courier[], open: (s.data ?? []) as Open[] };
   }, [sb, pizzeriaId]);
   const [failed, setFailed] = useState(false);
-  const apply = useCallback((r: { orders: Row[]; couriers: Courier[] } | null) => {
+  const apply = useCallback((r: { orders: Row[]; couriers: Courier[]; open: Open[] } | null) => {
     setFailed(!r);
     if (!r) return;
     setOrders(r.orders);
     setCouriers(r.couriers);
+    setOpen(r.open);
   }, []);
   const refresh = async () => apply(await fetchAll());
   const reload = useEffectEvent(async () => apply(await fetchAll()));
@@ -94,9 +108,9 @@ export function DeliveryBoard({ pizzeriaId, role }: { pizzeriaId: string; role: 
         subtitle={live ? "Ao vivo: os pedidos de entrega aparecem aqui sozinhos." : "Conectando… atualiza a cada 30 s."}
         actions={
           <div className="flex gap-1 rounded-full bg-sand p-1 text-sm font-bold">
-            {(["fila", "entregadores"] as const).map((k) => (
+            {(MANAGE.includes(role) ? (["fila", "entregadores", "acerto"] as const) : (["fila", "entregadores"] as const)).map((k) => (
               <button key={k} onClick={() => setTab(k)} className={`rounded-full px-4 py-1.5 ${tab === k ? "bg-surface shadow-sm" : "text-muted"}`}>
-                {k === "fila" ? "Fila de entregas" : "Entregadores"}
+                {k === "fila" ? "Fila de entregas" : k === "entregadores" ? "Entregadores" : "Acerto"}
               </button>
             ))}
           </div>
@@ -113,6 +127,8 @@ export function DeliveryBoard({ pizzeriaId, role }: { pizzeriaId: string; role: 
         <div className="grid place-items-center py-20">
           <Spinner className="h-7 w-7 text-tomato" />
         </div>
+      ) : tab === "acerto" ? (
+        <Settlement couriers={couriers} open={open} onChanged={refresh} />
       ) : tab === "entregadores" ? (
         <Couriers pizzeriaId={pizzeriaId} couriers={couriers} orders={list} canManage={MANAGE.includes(role)} onChanged={refresh} />
       ) : (
@@ -292,7 +308,7 @@ function Couriers({ pizzeriaId, couriers, orders, canManage, onChanged }: { pizz
     const done = orders.filter((o) => o.courier_id === id && o.status === "entregue" && o.delivered_at && new Date(o.delivered_at).getTime() >= today);
     return {
       delivered: done.length,
-      fees: done.reduce((a, o) => a + o.delivery_fee_cents, 0),
+      earned: done.reduce((a, o) => a + (o.courier_pay_cents ?? o.delivery_fee_cents), 0),
       onRoute: orders.filter((o) => o.courier_id === id && o.status === "saiu").length,
     };
   };
@@ -323,10 +339,11 @@ function Couriers({ pizzeriaId, couriers, orders, canManage, onChanged }: { pizz
                     <p className={`font-bold ${c.active ? "" : "text-muted line-through"}`}>{c.name}</p>
                     <p className="text-xs text-muted">{c.phone ? formatBrPhone(c.phone) : "sem telefone"}</p>
                     <p className="text-xs">
-                      Hoje: <b>{s.delivered}</b> entrega(s) · taxas {brl(s.fees)}
+                      Hoje: <b>{s.delivered}</b> entrega(s) · ganhou {brl(s.earned)}
                       {s.onRoute > 0 && <span className="text-tomato"> · {s.onRoute} em rota</span>}
                     </p>
                   </div>
+                  {canManage && <PayDeal courier={c} onChanged={onChanged} />}
                   {canManage && (
                     <Toggle
                       checked={c.active}
@@ -340,7 +357,7 @@ function Couriers({ pizzeriaId, couriers, orders, canManage, onChanged }: { pizz
             })}
           </ul>
         )}
-        <p className="mt-3 text-[11px] text-muted">“Taxas” é a soma das taxas de entrega dos pedidos que a pessoa entregou hoje — ajuda no acerto do dia.</p>
+        <p className="mt-3 text-[11px] text-muted">“Ganhou” segue o combinado de cada entregador (o padrão fica em Configurações → Entregadores). O acerto fica na aba “Acerto”.</p>
       </Panel>
       {canManage && (
         <Panel title="Novo entregador">
@@ -358,5 +375,104 @@ function Couriers({ pizzeriaId, couriers, orders, canManage, onChanged }: { pizz
         </Panel>
       )}
     </div>
+  );
+}
+
+/** Combinado de pagamento de um entregador (vazio = padrão da loja). */
+function PayDeal({ courier: c, onChanged }: { courier: Courier; onChanged: () => Promise<void> }) {
+  const sb = browserClient();
+  const [mode, setMode] = useState<CourierPay | "">(c.pay_mode ?? "");
+  const [fixed, setFixed] = useState(centsToInput(c.pay_fixed_cents ?? 0));
+  const [busy, setBusy] = useState(false);
+  // Sem a migração do painel do entregador, a coluna ainda não existe.
+  if (c.pay_mode === undefined) return null;
+  const needsValue = mode === "fixo" || mode === "taxa_mais_fixo";
+  const dirty = mode !== (c.pay_mode ?? "") || (needsValue && parseMoney(fixed || "0") !== (c.pay_fixed_cents ?? 0));
+  const save = async () => {
+    const cents = parseMoney(fixed || "0");
+    if (cents == null) return toast.error("Valor inválido.");
+    setBusy(true);
+    const { error } = await sb
+      .from("couriers")
+      .update({ pay_mode: mode || null, pay_fixed_cents: needsValue ? cents : null })
+      .eq("id", c.id);
+    setBusy(false);
+    if (error) return toast.error(dbError(error));
+    toast.success(`Combinado de ${c.name.split(" ")[0]} salvo`);
+    await onChanged();
+  };
+  return (
+    <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+      <select aria-label={`Pagamento de ${c.name}`} className="field !w-auto !py-1.5 text-xs" value={mode} onChange={(e) => setMode(e.target.value as CourierPay | "")}>
+        <option value="">Padrão da loja</option>
+        {(Object.keys(COURIER_PAY_LABEL) as CourierPay[]).map((k) => (
+          <option key={k} value={k}>
+            {COURIER_PAY_LABEL[k]}
+          </option>
+        ))}
+      </select>
+      {needsValue && <MoneyInput className="field !w-28 !py-1.5 text-xs" value={fixed} onChange={setFixed} />}
+      {dirty && (
+        <button className="btn !px-3 !py-1.5 text-xs" disabled={busy} onClick={save}>
+          {busy && <Spinner className="h-3 w-3" />} Salvar
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Quanto a loja deve a cada entregador e quanto dinheiro de cliente ele tem em mãos. */
+function Settlement({ couriers, open, onChanged }: { couriers: Courier[]; open: Open[]; onChanged: () => Promise<void> }) {
+  const sb = browserClient();
+  const [busy, setBusy] = useState<string | null>(null);
+  const rows = couriers
+    .map((c) => {
+      const mine = open.filter((o) => o.courier_id === c.id);
+      const pay = mine.reduce((a, o) => a + (o.courier_pay_cents ?? 0), 0);
+      const cash = mine.reduce((a, o) => a + o.courier_cash_cents, 0);
+      return { c, mine, pay, cash, balance: pay - cash };
+    })
+    .filter((r) => r.mine.length > 0);
+
+  const settle = async (c: Courier, balance: number) => {
+    const msg = balance >= 0 ? `Confirmar que a loja pagou ${brl(balance)} para ${c.name}?` : `Confirmar que ${c.name} devolveu ${brl(-balance)} para a loja?`;
+    if (!confirm(msg)) return;
+    setBusy(c.id);
+    const { error } = await sb.rpc("settle_courier", { _courier: c.id });
+    setBusy(null);
+    if (error) return toast.error(dbError(error));
+    toast.success(`Acerto de ${c.name.split(" ")[0]} feito`);
+    await onChanged();
+  };
+
+  return (
+    <Panel title="Acerto com os entregadores">
+      {rows.length === 0 ? (
+        <Empty>Tudo acertado. As entregas novas aparecem aqui até você fazer o acerto.</Empty>
+      ) : (
+        <ul className="divide-y">
+          {rows.map(({ c, mine, pay, cash, balance }) => (
+            <li key={c.id} className="flex flex-wrap items-center gap-3 py-3 text-sm">
+              <div className="min-w-0 flex-1">
+                <p className="font-bold">{c.name}</p>
+                <p className="text-xs text-muted">
+                  {mine.length} entrega(s) em aberto (#{mine.map((o) => o.number).join(", #")})
+                </p>
+                <p className="text-xs">
+                  Ganhos {brl(pay)} · dinheiro de clientes com ele {brl(cash)}
+                </p>
+              </div>
+              <span className={`rounded-full px-3 py-1 text-xs font-bold ${balance >= 0 ? "bg-success-soft text-success" : "bg-dende-soft text-warning"}`}>
+                {balance >= 0 ? `Loja paga ${brl(balance)}` : `Ele devolve ${brl(-balance)}`}
+              </span>
+              <button className="btn !py-2 text-sm" disabled={busy != null} onClick={() => settle(c, balance)}>
+                {busy === c.id ? <Spinner className="h-4 w-4" /> : <HandCoins className="h-4 w-4" />} Acertar
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-3 text-[11px] text-muted">Dinheiro ou cartão recebido na porta é registrado sozinho quando o entregador marca a entrega.</p>
+    </Panel>
   );
 }

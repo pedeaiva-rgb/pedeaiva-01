@@ -1,4 +1,4 @@
-import type { Channel, Fulfillment, OrderStatus, PaymentMethod, PaymentStatus, Role } from "./types";
+import type { Channel, CourierPay, Fulfillment, OrderStatus, PaymentMethod, PaymentStatus, Role } from "./types";
 
 export const STATUS: Record<OrderStatus, { label: string; cls: string }> = {
   novo: { label: "Novo", cls: "bg-info-soft text-info" },
@@ -47,4 +47,10 @@ export const ROLE_LABEL: Record<Role, string> = {
   attendant: "Atendente",
   kitchen: "Cozinha",
   driver: "Entregador",
+};
+
+export const COURIER_PAY_LABEL: Record<CourierPay, string> = {
+  taxa: "A taxa de entrega do pedido",
+  fixo: "Um valor fixo por entrega",
+  taxa_mais_fixo: "A taxa de entrega + um valor fixo",
 };

@@ -31,8 +31,10 @@ Método `POST`, corpo JSON e o cabeçalho `X-Pede-Ai-Segredo` com o segredo most
     "forma_pagamento": "pix",
     "previsao_min": 30,
     "previsao_max": 50,
-    "link_acompanhamento": "https://pede-ai-e-va.vercel.app/pedido/…"
+    "link_acompanhamento": "https://pede-ai-e-va.vercel.app/pedido/…",
+    "codigo_entrega": "4821"
   },
+  "entregador": { "nome": "João" },
   "cliente": { "nome": "Ana", "telefone": "71999990001", "whatsapp": "5571999990001" }
 }
 ```
@@ -41,6 +43,8 @@ Método `POST`, corpo JSON e o cabeçalho `X-Pede-Ai-Segredo` com o segredo most
 - `pedido.status`: `novo`, `confirmado`, `preparo`, `pronto`, `saiu`, `entregue`, `cancelado`.
 - `cliente.whatsapp` vem `null` em pedido de balcão sem telefone: pule o envio nesse caso.
 - O endereço de entrega **não** vai no aviso.
+- `pedido.codigo_entrega`: 4 números que o cliente informa ao entregador (vem vazio se a loja não exige código). Mande na mensagem de `saiu`.
+- `entregador.nome`: primeiro nome de quem leva o pedido (vazio enquanto não houver entregador).
 
 ## 3. Montar o fluxo
 

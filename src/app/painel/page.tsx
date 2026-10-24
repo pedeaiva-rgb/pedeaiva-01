@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { CheckCircle2, Circle, Clock, Monitor, Pizza, Receipt, Wallet } from "lucide-react";
 import { Panel } from "@/components/ui";
 import { brl } from "@/lib/money";
@@ -12,6 +13,7 @@ type Row = { id: string; number: number; status: OrderStatus; total_cents: numbe
 
 export default async function Overview() {
   const t = (await getTenant())!;
+  if (t.role === "driver") redirect("/painel/entregador");
   const pz = t.pizzeria;
   const sb = await createClient();
   const since = startOfTodaySP().toISOString();

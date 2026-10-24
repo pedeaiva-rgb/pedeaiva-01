@@ -405,3 +405,118 @@ describe("equipe por link de convite", () => {
     expect(await fails(user(OWNER_B), "select public.create_pizzeria('Convite', 'convite')")).toMatch(/pizzerias_slug_reservado|check/);
   });
 });
+
+describe("painel do entregador", () => {
+  const D1 = "00000000-0000-4000-8000-0000000000e1";
+  const D2 = "00000000-0000-4000-8000-0000000000e2";
+  let c1 = "";
+  const entrega = (over: Record<string, unknown> = {}) =>
+    createOrder(
+      orderPayload({
+        fulfillment: "entrega",
+        address: { street: "Rua A", number: "10", neighborhood: "Centro" },
+        channel: "telefone",
+        customer_phone: "71933330001",
+        delivery_fee_cents: 800,
+        total_cents: 5800,
+        payment_method: "dinheiro",
+        ...over,
+      }),
+    );
+  const ready = async (id: string) => {
+    await one(user(OWNER_A), "select public.transition_order($1, 'confirmado')", [id]);
+    await one(user(OWNER_A), "select public.transition_order($1, 'pronto')", [id]);
+  };
+  const seen = async (who: string) => (await rows<{ id: string }>(user(who), "select id from public.orders where pizzeria_id = $1", [pzA])).map((r) => r.id);
+
+  beforeAll(async () => {
+    await db.query("insert into auth.users (id, email) values ($1, 'd1@x.com'), ($2, 'd2@x.com')", [D1, D2]);
+    await as(user(OWNER_A), async (tx) => {
+      await tx.query("select public.add_member_by_email($1, 'd1@x.com', 'driver', 'Davi Um')", [pzA]);
+      await tx.query("select public.add_member_by_email($1, 'd2@x.com', 'driver', 'Dora Dois')", [pzA]);
+    });
+    c1 = (await one<{ id: string }>(user(OWNER_A), "select id from public.couriers where user_id = $1", [D1])).id;
+  });
+
+  it("entregador vê só os prontos disponíveis e os dele, sem código nem clientes", async () => {
+    const cozinha = await entrega();
+    const pronto = await entrega();
+    await ready(pronto.order_id);
+    const retirada = await createOrder(orderPayload());
+    await ready(retirada.order_id);
+    const vis = await seen(D1);
+    expect(vis).toContain(pronto.order_id);
+    expect(vis).not.toContain(cozinha.order_id);
+    expect(vis).not.toContain(retirada.order_id);
+    expect(await rows(user(D1), "select * from public.delivery_codes")).toHaveLength(0);
+    expect(await rows(user(D1), "select * from public.customers")).toHaveLength(0);
+    expect(await rows(user(D1), "select name from public.couriers")).toEqual([{ name: "Davi Um" }]);
+    expect((await rows(user(OWNER_A), "select * from public.delivery_codes where order_id = $1", [pronto.order_id])).length).toBe(1);
+  });
+
+  it("pegar o pedido tira ele da lista dos outros; só o dono do pedido mexe", async () => {
+    const o = await entrega();
+    await ready(o.order_id);
+    await one(user(D1), "select public.take_order($1)", [o.order_id]);
+    expect(await fails(user(D2), "select public.take_order($1)", [o.order_id])).toMatch(/Outro entregador/);
+    expect(await seen(D2)).not.toContain(o.order_id);
+    expect(await fails(user(D2), "select public.transition_order($1, 'saiu')", [o.order_id])).toMatch(/não está com você/);
+    await one(user(D1), "select public.release_order($1)", [o.order_id]);
+    expect(await seen(D2)).toContain(o.order_id);
+  });
+
+  it("entrega com código: guarda o ganho e o dinheiro em mãos", async () => {
+    const o = await entrega();
+    await ready(o.order_id);
+    await one(user(D1), "select public.take_order($1)", [o.order_id]);
+    await one(user(D1), "select public.transition_order($1, 'saiu')", [o.order_id]);
+    expect(await fails(user(D1), "select public.transition_order($1, 'entregue')", [o.order_id])).toMatch(/código de entrega/);
+    expect(await fails(user(D1), "select public.complete_delivery($1, 'xxxx')", [o.order_id])).toMatch(/Código errado/);
+    const t = await one<{ t: { courier_name: string; delivery_code: string } }>(ANON, "select public.get_order_tracking($1) t", [o.public_token]);
+    expect(t.t.courier_name).toBe("Davi");
+    await one(user(D1), "select public.complete_delivery($1, $2)", [o.order_id, t.t.delivery_code]);
+    expect(
+      await one(user(OWNER_A), "select status, courier_pay_cents, courier_cash_cents, payment_status from public.orders where id = $1", [o.order_id]),
+    ).toEqual({ status: "entregue", courier_pay_cents: 800, courier_cash_cents: 5800, payment_status: "recebido" });
+    expect((await one<{ n: number }>(user(OWNER_A), "select count(*)::int n from public.payments where order_id = $1", [o.order_id])).n).toBe(1);
+  });
+
+  it("combinado do entregador e da loja muda o valor ganho", async () => {
+    await one(user(OWNER_A), "update public.couriers set pay_mode = 'fixo', pay_fixed_cents = 500 where id = $1 returning id", [c1]);
+    const a = await entrega({ payment_method: "pix" });
+    await ready(a.order_id);
+    await one(user(OWNER_A), "select public.assign_courier($1, $2)", [a.order_id, c1]);
+    await one(user(OWNER_A), "select public.transition_order($1, 'saiu')", [a.order_id]);
+    await one(user(OWNER_A), "select public.transition_order($1, 'entregue')", [a.order_id]);
+    expect(await one(user(OWNER_A), "select courier_pay_cents, courier_cash_cents, payment_status from public.orders where id = $1", [a.order_id])).toEqual({
+      courier_pay_cents: 500,
+      courier_cash_cents: 0,
+      payment_status: "pendente",
+    });
+    await one(user(OWNER_A), "update public.couriers set pay_mode = null, pay_fixed_cents = null where id = $1 returning id", [c1]);
+    await one(user(OWNER_A), "update public.pizzerias set courier_pay_mode = 'taxa_mais_fixo', courier_pay_fixed_cents = 300 where id = $1 returning id", [pzA]);
+    const b = await entrega({ payment_method: "pix" });
+    await ready(b.order_id);
+    await one(user(D1), "select public.take_order($1)", [b.order_id]);
+    await one(user(D1), "select public.transition_order($1, 'saiu')", [b.order_id]);
+    await one(user(OWNER_A), "update public.pizzerias set require_delivery_code = false where id = $1 returning id", [pzA]);
+    await one(user(D1), "select public.transition_order($1, 'entregue')", [b.order_id]);
+    expect((await one<{ p: number }>(user(OWNER_A), "select courier_pay_cents p from public.orders where id = $1", [b.order_id])).p).toBe(1100);
+  });
+
+  it("sem autoatribuição, entregador não vê nem pega pedido livre", async () => {
+    await one(user(OWNER_A), "update public.pizzerias set couriers_self_assign = false where id = $1 returning id", [pzA]);
+    const o = await entrega();
+    await ready(o.order_id);
+    expect(await seen(D1)).not.toContain(o.order_id);
+    expect(await fails(user(D1), "select public.take_order($1)", [o.order_id])).toMatch(/atendimento/);
+    await one(user(OWNER_A), "update public.pizzerias set couriers_self_assign = true where id = $1 returning id", [pzA]);
+  });
+
+  it("acerto: só a gerência fecha, e fecha tudo que estava em aberto", async () => {
+    expect(await fails(user(D1), "select public.settle_courier($1)", [c1])).toMatch(/Sem permissão/);
+    const n = (await one<{ n: number }>(user(OWNER_A), "select public.settle_courier($1) n", [c1])).n;
+    expect(n).toBe(3);
+    expect((await one<{ n: number }>(user(OWNER_A), "select public.settle_courier($1) n", [c1])).n).toBe(0);
+  });
+});

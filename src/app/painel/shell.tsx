@@ -9,12 +9,13 @@ import { ROLE_LABEL } from "@/lib/order-labels";
 import type { Role } from "@/lib/types";
 import { signOut, switchPizzeria } from "./actions";
 
-type Area = "pedidos" | "cozinha" | "entregas" | "pdv" | "cardapio" | "configuracoes" | "cupons" | "equipe" | "automacoes";
+type Area = "pedidos" | "cozinha" | "entregas" | "entregador" | "pdv" | "cardapio" | "configuracoes" | "cupons" | "equipe" | "automacoes";
 const NAV: { href: string; label: string; icon: typeof Receipt; area?: Area }[] = [
   { href: "/painel", label: "Visão geral", icon: LayoutDashboard },
   { href: "/painel/pedidos", label: "Pedidos", icon: Receipt, area: "pedidos" },
   { href: "/painel/cozinha", label: "Cozinha", icon: ChefHat, area: "cozinha" },
   { href: "/painel/entregas", label: "Entregas", icon: Bike, area: "entregas" },
+  { href: "/painel/entregador", label: "Minhas entregas", icon: Bike, area: "entregador" },
   { href: "/painel/pdv", label: "PDV / Balcão", icon: Monitor, area: "pdv" },
   { href: "/painel/cardapio", label: "Cardápio", icon: Pizza, area: "cardapio" },
   { href: "/painel/cupons", label: "Cupons", icon: Ticket, area: "cupons" },
@@ -40,7 +41,9 @@ export function Shell({
 }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
-  const items = NAV.filter((n) => !n.area || access[n.area].includes(role));
+  // O entregador vê só as entregas dele: nada da operação interna da loja.
+  const driver = role === "driver";
+  const items = NAV.filter((n) => (n.area ? access[n.area].includes(role) : !driver));
 
   return (
     <div className="min-h-dvh md:flex">
@@ -85,9 +88,11 @@ export function Shell({
             );
           })}
         </nav>
+        {!driver && (
         <a href={`/${pizzeria.slug}`} target="_blank" rel="noreferrer" className="mb-2 flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-dende hover:bg-graphite">
           <ExternalLink className="h-4 w-4" /> Ver minha loja
         </a>
+        )}
         <div className="border-t border-graphite pt-3 text-xs text-cream/60">
           <p className="truncate">{email}</p>
           <p>{ROLE_LABEL[role]}</p>

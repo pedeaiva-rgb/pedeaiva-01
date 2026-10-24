@@ -23,7 +23,7 @@ const EXAMPLES: [string, string][] = [
   ["pedido.criado", "Olá, {{cliente.nome}}! Recebemos seu pedido #{{pedido.numero}} 🍕 Acompanhe aqui: {{pedido.link_acompanhamento}}"],
   ["confirmado", "Seu pedido #{{pedido.numero}} foi confirmado e já vai para a cozinha."],
   ["preparo", "Seu pedido #{{pedido.numero}} está no forno! 🔥"],
-  ["saiu", "Seu pedido #{{pedido.numero}} saiu para entrega 🛵"],
+  ["saiu", "Seu pedido #{{pedido.numero}} saiu para entrega com {{entregador.nome}} 🛵 Código de entrega: {{pedido.codigo_entrega}}"],
   ["pronto (retirada)", "Seu pedido #{{pedido.numero}} está pronto para retirada."],
   ["entregue", "Pedido entregue! Obrigado por pedir na {{pizzaria.nome}} ❤️"],
   ["cancelado", "Seu pedido #{{pedido.numero}} foi cancelado. Qualquer dúvida, fale com a gente."],

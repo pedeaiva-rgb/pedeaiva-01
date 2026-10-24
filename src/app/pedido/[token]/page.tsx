@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Check, Clock, Phone, Receipt, XCircle } from "lucide-react";
+import { Bike, Check, Clock, Phone, Receipt, XCircle } from "lucide-react";
 import { PavSymbol } from "@/components/brand/logo";
 import { SetupNotice } from "@/components/setup-notice";
 import { brl } from "@/lib/money";
@@ -25,6 +25,8 @@ type Tracking = {
   total_cents: number;
   eta_min: number | null;
   eta_max: number | null;
+  courier_name?: string | null;
+  delivery_code?: string | null;
   pizzeria: { name: string; slug: string; phone: string | null };
   items: { name: string; size_name: string | null; qty: number; subtotal_cents: number; extras: { name: string }[] }[];
   events: { status: OrderStatus; at: string }[];
@@ -83,6 +85,19 @@ export default async function TrackingPage({ params }: PageProps<"/pedido/[token
             <p className="flex items-center gap-2 text-sm">
               <Clock className="h-4 w-4 text-muted" /> Previsão: <b>{t.eta_min}–{t.eta_max ?? t.eta_min} min</b>
             </p>
+          )}
+          {t.fulfillment === "entrega" && t.courier_name && !cancelled && (
+            <p className="flex items-center gap-2 text-sm">
+              <Bike className="h-4 w-4 text-muted" />
+              {t.status === "entregue" ? "Entregue por" : t.status === "saiu" ? "Saiu com" : "Vai entregar:"} <b>{t.courier_name}</b>
+            </p>
+          )}
+          {t.delivery_code && (
+            <div className="rounded-2xl bg-dende-soft p-3 text-center">
+              <p className="text-xs font-bold text-warning">Código de entrega</p>
+              <p className="font-mono text-3xl font-extrabold tracking-[0.4em]">{t.delivery_code}</p>
+              <p className="text-xs text-muted">Diga este código ao entregador só quando receber o pedido.</p>
+            </div>
           )}
           <p className="text-sm">
             Pagamento: <b>{PAYMENT_LABEL[t.payment_method]}</b> na {t.fulfillment}{" "}

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { can, getTenant } from "@/lib/tenant";
 import type { DeliveryZone, Pizzeria } from "@/lib/types";
 import { NoAccess } from "../no-access";
+import { DeliveryRules } from "./delivery-rules";
 import { SettingsForm } from "./settings-form";
 
 export const metadata: Metadata = { title: "Configurações" };
@@ -15,5 +16,10 @@ export default async function ConfiguracoesPage() {
     sb.from("pizzerias").select("*").eq("id", t.pizzeria.id).single(),
     sb.from("delivery_zones").select("*").eq("pizzeria_id", t.pizzeria.id).order("name"),
   ]);
-  return <SettingsForm pizzeria={pz.data as Pizzeria} zones={(zones.data ?? []) as DeliveryZone[]} />;
+  return (
+    <>
+      <SettingsForm pizzeria={pz.data as Pizzeria} zones={(zones.data ?? []) as DeliveryZone[]} />
+      <DeliveryRules pizzeria={pz.data as Pizzeria} />
+    </>
+  );
 }

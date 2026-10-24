@@ -7,6 +7,8 @@ export type PaymentMethod = "pix" | "cartao" | "dinheiro";
 export type PaymentStatus = "pendente" | "recebido" | "estornado";
 export type HalfPricing = "mais_caro" | "media";
 export type DeliveryMode = "fixa" | "bairro";
+/** Como o entregador ganha por entrega: a taxa do pedido, um valor fixo ou os dois somados. */
+export type CourierPay = "taxa" | "fixo" | "taxa_mais_fixo";
 
 export type Pizzeria = {
   id: string;
@@ -26,6 +28,10 @@ export type Pizzeria = {
   delivery_eta_min: number;
   delivery_eta_max: number;
   opening_hours: unknown;
+  couriers_self_assign: boolean;
+  require_delivery_code: boolean;
+  courier_pay_mode: CourierPay;
+  courier_pay_fixed_cents: number;
   created_at: string;
   updated_at: string;
 };
@@ -120,11 +126,25 @@ export type Order = {
   courier_id: string | null;
   dispatched_at: string | null;
   delivered_at: string | null;
+  courier_pay_cents: number | null;
+  courier_cash_cents: number;
+  settled_at: string | null;
   created_at: string;
   updated_at: string;
 };
 
-export type Courier = { id: string; pizzeria_id: string; name: string; phone: string | null; active: boolean; created_at: string };
+export type Courier = {
+  id: string;
+  pizzeria_id: string;
+  name: string;
+  phone: string | null;
+  active: boolean;
+  created_at: string;
+  user_id: string | null;
+  /** Vazio = segue o combinado padrão da loja. */
+  pay_mode: CourierPay | null;
+  pay_fixed_cents: number | null;
+};
 
 export type Menu = {
   pizzeria: Pizzeria;
