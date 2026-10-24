@@ -7,14 +7,15 @@ import { LiveMap, type MapPoint } from "@/components/map/live-map";
 import { Empty, Panel, Spinner } from "@/components/ui";
 import { beep, minutesSince, startOfTodaySP, timeSP } from "@/lib/beep";
 import { dbError } from "@/lib/db-error";
+import { blankNumber } from "@/lib/address-key";
 import { distanceKm, etaMinutes, formatKm, googleRouteUrl, planRoute, type LatLng } from "@/lib/geo";
 import { brl } from "@/lib/money";
 import { PAYMENT_LABEL } from "@/lib/order-labels";
 import { formatBrPhone } from "@/lib/phone";
 import { browserClient } from "@/lib/supabase/client";
 import type { Courier, Order, OrderItem } from "@/lib/types";
-import { ensureGeocoded } from "../entregas/geo-actions";
-import { useCourierGps, useWakeLock, type GpsStatus } from "./use-courier-gps";
+import { ensureGeocoded, setOrderLocation } from "../entregas/geo-actions";
+import { useCourierGps, useWakeLock, type Gps, type GpsStatus } from "./use-courier-gps";
 
 type Row = Order & { order_items: Pick<OrderItem, "id" | "name" | "size_name" | "qty">[] };
 type Done = Pick<Order, "id" | "number" | "delivered_at" | "delivery_fee_cents" | "courier_pay_cents" | "courier_cash_cents" | "settled_at" | "zone_name"> & {
@@ -22,9 +23,18 @@ type Done = Pick<Order, "id" | "number" | "delivered_at" | "delivery_fee_cents" 
 };
 type Tab = "disponiveis" | "minhas" | "ganhos";
 
-const addressText = (o: Pick<Order, "address">) => (o.address ? `${o.address.street}, ${o.address.number} - ${o.address.neighborhood}` : "");
-const googleMaps = (o: Row) => `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${encodeURIComponent(addressText(o))}`;
-const waze = (o: Row) => `https://waze.com/ul?navigate=yes&q=${encodeURIComponent(addressText(o))}`;
+/** Endereço em texto para o Google Maps/Waze, com condomínio e cidade da loja (sem a cidade, ele erra de lugar). */
+const addressText = (o: Pick<Order, "address">, city: string | null) =>
+  o.address
+    ? [`${o.address.street}${blankNumber(o.address.number) ? "" : `, ${o.address.number}`}`, o.address.complement, o.address.neighborhood, city].filter(Boolean).join(", ")
+    : "";
+/** Com ponto certo no mapa, a navegação vai pelas coordenadas; senão, pelo endereço escrito. */
+const navTarget = (o: Row, city: string | null) => (o.geo_status === "ok" && o.dest_lat != null ? `${o.dest_lat},${o.dest_lng}` : addressText(o, city));
+const googleMaps = (o: Row, city: string | null) => `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${encodeURIComponent(navTarget(o, city))}`;
+const waze = (o: Row, city: string | null) =>
+  o.geo_status === "ok" && o.dest_lat != null
+    ? `https://waze.com/ul?navigate=yes&ll=${o.dest_lat},${o.dest_lng}`
+    : `https://waze.com/ul?navigate=yes&q=${encodeURIComponent(addressText(o, city))}`;
 
 /** O que o entregador tem que receber na porta. */
 function toCollect(o: Order) {
@@ -57,12 +67,15 @@ export function DriverApp({
   selfAssign,
   requireCode,
   store,
+  city,
 }: {
   pizzeriaId: string;
   courier: Courier;
   selfAssign: boolean;
   requireCode: boolean;
   store: LatLng | null;
+  /** Cidade da loja, para o Google Maps não errar de lugar. */
+  city: string | null;
 }) {
   const sb = browserClient();
   const [tab, setTab] = useState<Tab>("minhas");
@@ -185,7 +198,7 @@ export function DriverApp({
     }),
   ];
   const line = [start, ...plan.map(destOf)].filter((p): p is LatLng => !!p).map((p) => [p.lat, p.lng] as [number, number]);
-  const routeUrl = plan.length > 1 ? googleRouteUrl(plan.map(addressText)) : null;
+  const routeUrl = plan.length > 1 ? googleRouteUrl(plan.map((o) => navTarget(o, city))) : null;
 
   const tabs: [Tab, string, number | null][] = [
     ...(selfAssign ? [["disponiveis", "Disponíveis", available.length] as [Tab, string, number]] : []),
@@ -252,7 +265,7 @@ export function DriverApp({
           {mine.length === 0 ? (
             <Empty>{selfAssign ? "Você não tem entregas agora. Veja os pedidos em “Disponíveis”." : "Você não tem entregas agora. A loja vai te passar os pedidos."}</Empty>
           ) : (
-            plan.map((o) => <MyCard key={o.id} o={o} now={now} requireCode={requireCode} leg={mine.length > 1 ? legs.get(o.id) : undefined} onChanged={refresh} />)
+            plan.map((o) => <MyCard key={o.id} o={o} now={now} city={city} gps={gps} requireCode={requireCode} leg={mine.length > 1 ? legs.get(o.id) : undefined} onChanged={refresh} />)
           )}
         </div>
       )}
@@ -309,7 +322,23 @@ function AvailableCard({ o, now, onChanged, onTaken }: { o: Row; now: number; on
   );
 }
 
-function MyCard({ o, now, requireCode, leg, onChanged }: { o: Row; now: number; requireCode: boolean; leg?: Leg; onChanged: () => Promise<void> }) {
+function MyCard({
+  o,
+  now,
+  city,
+  gps,
+  requireCode,
+  leg,
+  onChanged,
+}: {
+  o: Row;
+  now: number;
+  city: string | null;
+  gps: Gps | null;
+  requireCode: boolean;
+  leg?: Leg;
+  onChanged: () => Promise<void>;
+}) {
   const sb = browserClient();
   const { busy, run } = useRun(onChanged);
   const [code, setCode] = useState("");
@@ -362,13 +391,33 @@ function MyCard({ o, now, requireCode, leg, onChanged }: { o: Row; now: number; 
             </span>
           </p>
           <div className="mt-2 grid grid-cols-2 gap-2">
-            <a href={googleMaps(o)} target="_blank" rel="noreferrer" className="btn-dark !py-2 text-xs">
+            <a href={googleMaps(o, city)} target="_blank" rel="noreferrer" className="btn-dark !py-2 text-xs">
               <Navigation className="h-4 w-4" /> Google Maps
             </a>
-            <a href={waze(o)} target="_blank" rel="noreferrer" className="btn-dark !py-2 text-xs">
+            <a href={waze(o, city)} target="_blank" rel="noreferrer" className="btn-dark !py-2 text-xs">
               <Navigation className="h-4 w-4" /> Waze
             </a>
           </div>
+          {o.geo_status !== "ok" && (
+            <p className="mt-2 text-xs font-semibold text-warning">
+              ⚠ O ponto deste endereço no mapa é {o.geo_status === "aproximado" ? "só aproximado (pelo bairro)" : "desconhecido"}. Confirme o caminho com o cliente.
+            </p>
+          )}
+          {o.status === "saiu" && gps && (
+            <button
+              className="mt-2 w-full text-center text-xs font-bold text-tomato"
+              disabled={busy}
+              onClick={async () => {
+                if (!confirm("Você está na porta do cliente agora? O ponto deste endereço vai ficar guardado para as próximas entregas.")) return;
+                const r = await setOrderLocation(o.id, { lat: gps.lat, lng: gps.lng });
+                if (r.ok) toast.success(r.message);
+                else toast.error(r.message);
+                await onChanged();
+              }}
+            >
+              <MapPin className="mr-1 inline h-3 w-3" /> Estou na porta: guardar este ponto no mapa
+            </button>
+          )}
         </div>
       )}
 

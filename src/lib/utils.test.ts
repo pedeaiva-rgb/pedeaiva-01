@@ -5,6 +5,7 @@ import { maskPhone } from "@/components/ui/phone-input";
 import { brl, centsToInput, parseMoney } from "./money";
 import { formatBrPhone, normalizeBrPhone } from "./phone";
 import { hideCpf, maskCpf, validCpf } from "./cpf";
+import { addressKeys, customerQueries } from "./address-key";
 import { addressQueries } from "./address-queries";
 import { distanceKm, etaMinutes, formatKm, googleRouteUrl, planRoute } from "./geo";
 
@@ -35,6 +36,20 @@ describe("mapa", () => {
     ]);
     expect(addressQueries("Av. Sete de Setembro, 1000, Centro, Salvador - BA")[0]).toBe("Avenida Sete de Setembro, 1000, Centro, Salvador, BA");
     expect(addressQueries("Salvador")).toEqual(["Salvador"]);
+  });
+  it("chaves e buscas do endereço do cliente", () => {
+    const a = { street: "rua Colônia Boa União", number: "0", neighborhood: "abrantes", complement: "reserva parque", reference: "" };
+    expect(addressKeys(a)).toEqual({ full: null, street: "rua colonia boa uniao||abrantes" });
+    expect(addressKeys({ ...a, street: "R. Colônia Boa União", number: "12" }).full).toBe("rua colonia boa uniao|12|abrantes");
+    expect(customerQueries(a, "Camaçari, BA")).toEqual({
+      queries: [
+        "rua Colônia Boa União, abrantes, Camaçari, BA",
+        "Condomínio reserva parque, Camaçari, BA",
+        "reserva parque, abrantes, Camaçari, BA",
+        "abrantes, Camaçari, BA",
+      ],
+      exact: 3,
+    });
   });
   it("rota no Google Maps com paradas", () => {
     const u = new URL(googleRouteUrl(["Rua A, 1", "Rua B, 2", "Rua C, 3"])!);

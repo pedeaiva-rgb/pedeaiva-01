@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Panel } from "@/components/ui";
+import { storeCity } from "@/lib/address-points";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { can, getTenant } from "@/lib/tenant";
 import type { Courier } from "@/lib/types";
@@ -30,6 +31,7 @@ export default async function EntregadorPage() {
       courier={courier}
       selfAssign={t.pizzeria.couriers_self_assign ?? true}
       requireCode={t.pizzeria.require_delivery_code ?? true}
+      city={storeCity(t.pizzeria.address)}
       store={t.pizzeria.lat != null && t.pizzeria.lng != null ? { lat: t.pizzeria.lat, lng: t.pizzeria.lng } : null}
     />
   );

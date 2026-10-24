@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useEffectEvent, useState } from "react";
-import { Bike, MapPinOff } from "lucide-react";
+import { Bike, MapPin, MapPinOff } from "lucide-react";
 import { LiveMap, type MapLine, type MapPoint } from "@/components/map/live-map";
 import { Empty, Panel } from "@/components/ui";
 import { minutesSince } from "@/lib/beep";
@@ -9,6 +9,7 @@ import { distanceKm, etaMinutes, formatKm, planRoute, type LatLng } from "@/lib/
 import { browserClient } from "@/lib/supabase/client";
 import type { Courier, Order } from "@/lib/types";
 import { ensureGeocoded } from "./geo-actions";
+import { PinDrawer } from "./pin-drawer";
 
 type Stop = Pick<Order, "id" | "number" | "status" | "customer_name" | "courier_id" | "dest_lat" | "dest_lng" | "geo_status" | "address">;
 const destOf = (o: Stop): LatLng | null => (o.dest_lat != null && o.dest_lng != null ? { lat: o.dest_lat, lng: o.dest_lng } : null);
@@ -21,6 +22,7 @@ export function MapTab({ pizzeriaId, orders, onGeocoded }: { pizzeriaId: string;
   const [couriers, setCouriers] = useState<Courier[]>([]);
   const [store, setStore] = useState<{ pos: LatLng | null; address: string | null } | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [fixing, setFixing] = useState<Stop | null>(null);
 
   const fetchLive = useCallback(async () => {
     const [c, z] = await Promise.all([
@@ -85,8 +87,6 @@ export function MapTab({ pizzeriaId, orders, onGeocoded }: { pizzeriaId: string;
     const d = destOf(o);
     if (d) points.push({ id: o.id, kind: "stop", ...d, approx: o.geo_status === "aproximado", label: `#${o.number} · pronto, esperando entregador` });
   }
-  const unlocated = active.filter((o) => !destOf(o));
-
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
       <div className="space-y-3">
@@ -130,13 +130,28 @@ export function MapTab({ pizzeriaId, orders, onGeocoded }: { pizzeriaId: string;
             </ul>
           )}
         </Panel>
-        {unlocated.length > 0 && (
-          <Panel title="Fora do mapa">
-            <p className="text-xs text-muted">
-              {unlocated.map((o) => `#${o.number}${o.geo_status === "falhou" ? " (endereço não encontrado)" : " (localizando…)"}`).join(", ")}
-            </p>
-          </Panel>
-        )}
+        <Panel title="Conferir pontos">
+          {active.length === 0 ? (
+            <Empty>Nenhuma entrega pronta ou em rota.</Empty>
+          ) : (
+            <ul className="divide-y text-sm">
+              {active.map((o) => (
+                <li key={o.id} className="flex items-center justify-between gap-2 py-2">
+                  <span className="min-w-0">
+                    <b>#{o.number}</b> {o.address?.neighborhood}
+                    <span className={`block text-xs ${o.geo_status === "ok" ? "text-success" : "text-warning"}`}>
+                      {o.geo_status === "ok" ? "Ponto certo" : o.geo_status === "aproximado" ? "Aproximado (só o bairro)" : o.geo_status === "falhou" ? "Endereço não achado no mapa" : "Localizando…"}
+                    </span>
+                  </span>
+                  <button className={`${o.geo_status === "ok" ? "btn-ghost" : "btn"} !px-3 !py-1.5 text-xs`} onClick={() => setFixing(o)}>
+                    <MapPin className="h-3.5 w-3.5" /> {o.geo_status === "ok" ? "Ajustar" : "Corrigir"}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+        {fixing && <PinDrawer order={fixing} store={store?.pos ?? null} onClose={() => setFixing(null)} onSaved={onGeocoded} />}
       </div>
     </div>
   );

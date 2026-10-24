@@ -6,6 +6,8 @@ import { brl } from "./money";
 import { firstIssue, quoteSchema, type QuoteInput } from "./order-schema";
 import { normalizeBrPhone } from "./phone";
 import { applyCoupon, normalizeCouponCode, priceLine, PricingError, quoteDelivery, type DeliveryQuote, type PricedLine } from "./pricing";
+import { rememberPoint } from "./address-points";
+import { distanceKm } from "./geo";
 import { adminClient } from "./supabase/admin";
 import type { Address, Channel, Coupon, Fulfillment, Menu, PaymentMethod } from "./types";
 
@@ -86,6 +88,7 @@ export type SubmitInput = z.output<typeof quoteSchema> & {
   payment_method: PaymentMethod;
   change_for_cents: number | null;
   notes: string;
+  location?: { lat: number; lng: number; accuracy?: number } | null;
 };
 
 export type SubmitResult = { ok: true; id: string; token: string; number: number; total_cents: number } | { ok: false; error: string };
@@ -144,5 +147,23 @@ export async function submitOrder(menu: Menu, data: SubmitInput, channel: Channe
     const known = /Cupom|Telefone|telefone|Muitos pedidos/.test(msg);
     return { ok: false, error: known ? msg : "Não foi possível registrar o pedido. Tente novamente." };
   }
+  if (fulfillment === "entrega" && data.location && data.address) await saveCustomerPoint(menu, row.order_id, data.address, data.location);
   return { ok: true, id: row.order_id, token: row.public_token, number: row.number, total_cents: q.total_cents };
+}
+
+/**
+ * Localização que o cliente marcou no celular vira o ponto da entrega (e fica guardada para o endereço).
+ * Ignora GPS impreciso ou longe da loja (ex.: cliente pedindo do trabalho para entregar em casa).
+ */
+async function saveCustomerPoint(menu: Menu, orderId: string, address: Address, loc: { lat: number; lng: number; accuracy?: number }) {
+  try {
+    if (loc.accuracy != null && loc.accuracy > 150) return;
+    const z = menu.pizzeria;
+    if (z.lat != null && z.lng != null && distanceKm({ lat: z.lat, lng: z.lng }, loc) > 30) return;
+    await adminClient().from("orders").update({ dest_lat: loc.lat, dest_lng: loc.lng, geo_status: "ok" }).eq("id", orderId);
+    await rememberPoint(z.id, address, loc, "cliente");
+  } catch (e) {
+    // O ponto no mapa é um extra: o pedido já foi feito.
+    console.error("ponto do cliente não salvo", e);
+  }
 }

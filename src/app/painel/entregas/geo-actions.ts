@@ -1,16 +1,22 @@
 "use server";
 
-import type { LatLng } from "@/lib/geo";
+import { customerQueries } from "@/lib/address-key";
+import { lookupPoint, rememberPoint, storeCity } from "@/lib/address-points";
+import { distanceKm, type LatLng } from "@/lib/geo";
 import { addressQueries, geocodeFirst, pause } from "@/lib/geocode";
 import { adminClient } from "@/lib/supabase/admin";
+import { createClient, getUser } from "@/lib/supabase/server";
 import { ACCESS, hasRole } from "@/lib/tenant";
 import type { Address } from "@/lib/types";
 
 export type GeoResult = { updated: number; store: boolean };
 
+/** Endereço de cliente achado a mais de 15 km da loja não é dele: é outro lugar com o mesmo nome. */
+const MAX_KM = 15;
+
 /**
  * Coloca no mapa a loja e os endereços das entregas em andamento que ainda não têm ponto.
- * Faz poucas consultas por vez (o serviço gratuito pede calma); quem chama repete depois.
+ * Primeiro usa os endereços que a loja já conhece; depois o mapa gratuito, aos poucos.
  */
 export async function ensureGeocoded(pizzeriaId: string): Promise<GeoResult> {
   if (!(await hasRole(pizzeriaId, [...ACCESS.entregas, ...ACCESS.entregador]))) return { updated: 0, store: false };
@@ -22,11 +28,11 @@ export async function ensureGeocoded(pizzeriaId: string): Promise<GeoResult> {
   if (!store && pz.address) {
     store = (await geocodeFirst(addressQueries(pz.address)))?.pos ?? null;
     if (store) await admin.from("pizzerias").update({ lat: store.lat, lng: store.lng }).eq("id", pizzeriaId);
-    // Achou ou não, as consultas de pedidos ficam para a próxima rodada.
     return { updated: 0, store: !!store };
   }
   // Sem saber onde fica a loja, não arrisca: "Rua A, Centro" existe em muitas cidades.
   if (!store) return { updated: 0, store: false };
+  const city = storeCity(pz.address);
 
   const { data: orders } = await admin
     .from("orders")
@@ -37,18 +43,24 @@ export async function ensureGeocoded(pizzeriaId: string): Promise<GeoResult> {
     .is("geo_status", null)
     .not("address", "is", null)
     .order("created_at")
-    .limit(3);
+    .limit(2);
 
   let updated = 0;
+  let asked = false;
   for (const o of (orders ?? []) as { id: string; address: Address }[]) {
     const a = o.address;
-    if (updated) await pause(1100);
-    // Rua com número → rua → bairro; sempre perto da loja.
-    const hit = await geocodeFirst([`${a.street}, ${a.number}, ${a.neighborhood}`, `${a.street}, ${a.neighborhood}`, a.neighborhood], store);
-    await admin
-      .from("orders")
-      .update({ dest_lat: hit?.pos.lat ?? null, dest_lng: hit?.pos.lng ?? null, geo_status: !hit ? "falhou" : hit.index < 2 ? "ok" : "aproximado" })
-      .eq("id", o.id);
+    const known = await lookupPoint(pizzeriaId, a);
+    let pos: LatLng | null = known?.pos ?? null;
+    let status: "ok" | "aproximado" | "falhou" = known ? (known.exact ? "ok" : "aproximado") : "falhou";
+    if (!known) {
+      if (asked) await pause(1100);
+      asked = true;
+      const { queries, exact } = customerQueries(a, city);
+      const hit = await geocodeFirst(queries, store, MAX_KM);
+      pos = hit?.pos ?? null;
+      status = !hit ? "falhou" : hit.index < exact ? "ok" : "aproximado";
+    }
+    await admin.from("orders").update({ dest_lat: pos?.lat ?? null, dest_lng: pos?.lng ?? null, geo_status: status }).eq("id", o.id);
     updated++;
   }
   return { updated, store: true };
@@ -60,4 +72,30 @@ export async function setStoreLocation(pizzeriaId: string, pos: LatLng): Promise
   if (!(Math.abs(pos.lat) <= 90 && Math.abs(pos.lng) <= 180)) return { ok: false, message: "Ponto inválido." };
   const { error } = await adminClient().from("pizzerias").update({ lat: pos.lat, lng: pos.lng }).eq("id", pizzeriaId);
   return error ? { ok: false, message: "Não foi possível salvar o ponto." } : { ok: true, message: "Ponto da loja salvo" };
+}
+
+/**
+ * Corrige o ponto de uma entrega (a loja tocando no mapa, ou o entregador na porta do cliente).
+ * O ponto fica guardado: o próximo pedido do mesmo endereço já sai certo.
+ */
+export async function setOrderLocation(orderId: string, pos: LatLng): Promise<{ ok: boolean; message: string }> {
+  if (!(Math.abs(pos.lat) <= 90 && Math.abs(pos.lng) <= 180)) return { ok: false, message: "Ponto inválido." };
+  const user = await getUser();
+  if (!user) return { ok: false, message: "Faça login de novo." };
+  // A leitura com a sessão da pessoa já respeita quem pode ver o pedido.
+  const sb = await createClient();
+  const { data: o } = await sb.from("orders").select("id, pizzeria_id, courier_id, address, fulfillment").eq("id", orderId).maybeSingle();
+  if (!o || o.fulfillment !== "entrega" || !o.address) return { ok: false, message: "Pedido não encontrado." };
+  const staff = await hasRole(o.pizzeria_id, ACCESS.entregas);
+  if (!staff) {
+    const { data: me } = await sb.from("couriers").select("id").eq("pizzeria_id", o.pizzeria_id).eq("user_id", user.id).maybeSingle();
+    if (!me || me.id !== o.courier_id) return { ok: false, message: "Você não tem permissão para isso." };
+  }
+  const admin = adminClient();
+  const { data: pz } = await admin.from("pizzerias").select("lat, lng").eq("id", o.pizzeria_id).single();
+  if (pz?.lat != null && pz.lng != null && distanceKm({ lat: pz.lat, lng: pz.lng }, pos) > 60) return { ok: false, message: "Esse ponto está longe demais da loja." };
+  const { error } = await admin.from("orders").update({ dest_lat: pos.lat, dest_lng: pos.lng, geo_status: "ok" }).eq("id", orderId);
+  if (error) return { ok: false, message: "Não foi possível salvar o ponto." };
+  await rememberPoint(o.pizzeria_id, o.address as Address, pos, "ajuste");
+  return { ok: true, message: "Ponto da entrega corrigido e guardado para os próximos pedidos" };
 }

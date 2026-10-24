@@ -32,6 +32,11 @@ const checkoutBase = quoteSchema.extend({
   payment_method: z.enum(["pix", "cartao", "dinheiro"]),
   change_for_cents: z.number().int().min(0).max(100_000_00).nullable().default(null),
   notes: z.string().trim().max(300).default(""),
+  /** Localização marcada pelo cliente no celular (ponto exato da entrega). */
+  location: z
+    .object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180), accuracy: z.number().min(0).max(100_000).optional() })
+    .nullable()
+    .default(null),
 });
 
 export const siteOrderSchema = checkoutBase.extend({

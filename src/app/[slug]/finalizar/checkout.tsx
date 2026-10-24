@@ -15,6 +15,7 @@ import { normalizeBrPhone, PHONE_ERROR } from "@/lib/phone";
 import { idempotencyKey, useQuote } from "@/lib/use-quote";
 import type { DeliveryMode, Fulfillment, PaymentMethod } from "@/lib/types";
 import { placeSiteOrder, quoteSiteOrder } from "../actions";
+import { LocationButton, type PickedLocation } from "./location-button";
 
 type Store = { name: string; allow_delivery: boolean; allow_pickup: boolean; delivery_mode: DeliveryMode };
 const PAY: [PaymentMethod, string, typeof QrCode][] = [
@@ -29,6 +30,7 @@ export function Checkout({ slug, store, neighborhoods }: { slug: string; store: 
   const [mode, setMode] = useState<Fulfillment>(store.allow_delivery ? "entrega" : "retirada");
   const [pay, setPay] = useState<PaymentMethod>("pix");
   const [f, setF] = useState({ name: "", phone: "", street: "", number: "", complement: "", neighborhood: "", reference: "", change: "", notes: "", coupon: "", website: "" });
+  const [location, setLocation] = useState<PickedLocation | null>(null);
   // O cupom aplicado fica guardado: vem da vitrine ("Usar") ou do botão Aplicar daqui.
   const [coupon, setCoupon] = useStoredCoupon(slug);
   const [typedCoupon, setTypedCoupon] = useState<string | null>(null);
@@ -77,6 +79,7 @@ export function Checkout({ slug, store, neighborhoods }: { slug: string; store: 
         change_for_cents: changeCents,
         notes: f.notes,
         website: f.website,
+        location: mode === "entrega" ? location : null,
       });
       if (!r.ok) {
         toast.error(r.error);
@@ -166,6 +169,7 @@ export function Checkout({ slug, store, neighborhoods }: { slug: string; store: 
               <Field label="Ponto de referência (opcional)">
                 <input className="field" value={f.reference} onChange={set("reference")} maxLength={120} />
               </Field>
+              <LocationButton value={location} onChange={setLocation} />
               {store.delivery_mode === "bairro" && neighborhoods.length > 0 && <p className="text-xs text-muted">Não achou seu bairro? Talvez ainda não entreguemos aí — escolha retirada.</p>}
             </section>
           )}

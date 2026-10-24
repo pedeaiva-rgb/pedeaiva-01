@@ -22,8 +22,13 @@ const ASSIGN: Role[] = ["owner", "manager", "cashier", "attendant"];
 const DISPATCH: Role[] = ["owner", "manager", "cashier", "attendant", "driver"];
 const MANAGE: Role[] = ["owner", "manager"];
 
+/** Com ponto certo no mapa abre pelas coordenadas; senão, pelo endereço escrito. */
 const mapsLink = (o: Row) =>
-  o.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${o.address.street}, ${o.address.number} - ${o.address.neighborhood}`)}` : null;
+  o.geo_status === "ok" && o.dest_lat != null
+    ? `https://www.google.com/maps/search/?api=1&query=${o.dest_lat},${o.dest_lng}`
+    : o.address
+      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([`${o.address.street}, ${o.address.number}`, o.address.complement, o.address.neighborhood].filter(Boolean).join(", "))}`
+      : null;
 
 export function DeliveryBoard({ pizzeriaId, role }: { pizzeriaId: string; role: Role }) {
   const sb = browserClient();
