@@ -5,6 +5,44 @@ import { maskPhone } from "@/components/ui/phone-input";
 import { brl, centsToInput, parseMoney } from "./money";
 import { formatBrPhone, normalizeBrPhone } from "./phone";
 import { hideCpf, maskCpf, validCpf } from "./cpf";
+import { addressQueries } from "./address-queries";
+import { distanceKm, etaMinutes, formatKm, googleRouteUrl, planRoute } from "./geo";
+
+describe("mapa", () => {
+  const loja = { lat: -12.97, lng: -38.5 };
+  it("distância e tempo", () => {
+    expect(distanceKm(loja, { lat: -12.98, lng: -38.5 })).toBeCloseTo(1.11, 1);
+    expect(etaMinutes(0)).toBe(2);
+    expect(etaMinutes(5)).toBe(19);
+    expect(formatKm(0.42)).toBe("420 m");
+    expect(formatKm(3.25)).toBe("3,3 km");
+  });
+  it("ordem sugerida vai sempre para a parada mais perto", () => {
+    const stops = [
+      { n: "longe", p: { lat: -13.05, lng: -38.5 } },
+      { n: "sem mapa", p: null },
+      { n: "perto", p: { lat: -12.98, lng: -38.5 } },
+      { n: "meio", p: { lat: -13.01, lng: -38.5 } },
+    ];
+    expect(planRoute(loja, stops, (s) => s.p).map((s) => s.n)).toEqual(["perto", "meio", "longe", "sem mapa"]);
+    expect(planRoute(null, stops, (s) => s.p).map((s) => s.n)).toEqual(["longe", "perto", "meio", "sem mapa"]);
+  });
+  it("endereço da loja vira consultas do mais preciso ao mais geral", () => {
+    expect(addressQueries("em frente ao cond.reserva parque - R. Col. Boa União - Catu de Abrantes, Camaçari - BA, 42821-798")).toEqual([
+      "Rua Col. Boa União, Catu de Abrantes, Camaçari, BA",
+      "Catu de Abrantes, Camaçari, BA",
+      "Camaçari, BA",
+    ]);
+    expect(addressQueries("Av. Sete de Setembro, 1000, Centro, Salvador - BA")[0]).toBe("Avenida Sete de Setembro, 1000, Centro, Salvador, BA");
+    expect(addressQueries("Salvador")).toEqual(["Salvador"]);
+  });
+  it("rota no Google Maps com paradas", () => {
+    const u = new URL(googleRouteUrl(["Rua A, 1", "Rua B, 2", "Rua C, 3"])!);
+    expect(u.searchParams.get("destination")).toBe("Rua C, 3");
+    expect(u.searchParams.get("waypoints")).toBe("Rua A, 1|Rua B, 2");
+    expect(googleRouteUrl([])).toBeNull();
+  });
+});
 
 describe("CPF", () => {
   it.each([

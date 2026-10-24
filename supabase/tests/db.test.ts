@@ -520,3 +520,45 @@ describe("painel do entregador", () => {
     expect((await one<{ n: number }>(user(OWNER_A), "select public.settle_courier($1) n", [c1])).n).toBe(0);
   });
 });
+
+describe("mapa das entregas", () => {
+  const D3 = "00000000-0000-4000-8000-0000000000e3";
+  beforeAll(async () => {
+    await db.query("insert into auth.users (id, email) values ($1, 'd3@x.com')", [D3]);
+    await one(user(OWNER_A), "select public.add_member_by_email($1, 'd3@x.com', 'driver', 'Tito Três')", [pzA]);
+  });
+  const where = () => one<{ last_lat: number | null; last_lng: number | null }>(user(OWNER_A), "select last_lat, last_lng from public.couriers where user_id = $1", [D3]);
+
+  it("posição só é guardada com entrega em rota e some ao entregar", async () => {
+    const loc = "select public.update_courier_location($1, -12.97, -38.5, 15) ok";
+    expect(await fails(user(KITCHEN_A), loc, [pzA])).toMatch(/Sem permissão/);
+    expect((await one<{ ok: boolean }>(user(D3), loc, [pzA])).ok).toBe(false);
+    expect((await where()).last_lat).toBeNull();
+
+    const o = await createOrder(
+      orderPayload({ channel: "telefone", fulfillment: "entrega", address: { street: "Rua B", number: "2", neighborhood: "Barra" }, customer_phone: "71944440001", delivery_fee_cents: 500, total_cents: 5500 }),
+    );
+    await one(user(OWNER_A), "select public.transition_order($1, 'confirmado')", [o.order_id]);
+    await one(user(OWNER_A), "select public.transition_order($1, 'pronto')", [o.order_id]);
+    await one(user(D3), "select public.take_order($1)", [o.order_id]);
+    await one(user(D3), "select public.transition_order($1, 'saiu')", [o.order_id]);
+    await db.query("update public.orders set dest_lat = -13.0, dest_lng = -38.52, geo_status = 'ok' where id = $1", [o.order_id]);
+    expect((await one<{ ok: boolean }>(user(D3), loc, [pzA])).ok).toBe(true);
+    expect(await where()).toEqual({ last_lat: -12.97, last_lng: -38.5 });
+
+    const t = await one<{ t: { map: { dest: { lat: number }; courier: { lat: number } } } }>(ANON, "select public.get_order_tracking($1) t", [o.public_token]);
+    expect(t.t.map.dest.lat).toBe(-13);
+    expect(t.t.map.courier.lat).toBe(-12.97);
+
+    await one(user(OWNER_A), "update public.pizzerias set require_delivery_code = false where id = $1 returning id", [pzA]);
+    await one(user(D3), "select public.transition_order($1, 'entregue')", [o.order_id]);
+    expect(await where()).toEqual({ last_lat: null, last_lng: null });
+    const after = await one<{ t: { map: unknown } }>(ANON, "select public.get_order_tracking($1) t", [o.public_token]);
+    expect(after.t.map).toBeNull();
+  });
+
+  it("outros não mudam a posição nem as coordenadas", async () => {
+    expect(await rows(user(D3), "update public.couriers set last_lat = 1 where user_id = $1 returning id", [D3])).toHaveLength(0);
+    expect(await fails(user(OWNER_B), "select public.update_courier_location($1, 1, 1)", [pzA])).toMatch(/Sem permissão/);
+  });
+});

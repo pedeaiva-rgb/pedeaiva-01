@@ -32,6 +32,8 @@ export type Pizzeria = {
   require_delivery_code: boolean;
   courier_pay_mode: CourierPay;
   courier_pay_fixed_cents: number;
+  lat: number | null;
+  lng: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -129,6 +131,9 @@ export type Order = {
   courier_pay_cents: number | null;
   courier_cash_cents: number;
   settled_at: string | null;
+  dest_lat: number | null;
+  dest_lng: number | null;
+  geo_status: "ok" | "aproximado" | "falhou" | null;
   created_at: string;
   updated_at: string;
 };
@@ -144,6 +149,10 @@ export type Courier = {
   /** Vazio = segue o combinado padrão da loja. */
   pay_mode: CourierPay | null;
   pay_fixed_cents: number | null;
+  /** Última posição enviada pelo celular (só enquanto há entrega em rota). */
+  last_lat: number | null;
+  last_lng: number | null;
+  last_seen_at: string | null;
 };
 
 export type Menu = {

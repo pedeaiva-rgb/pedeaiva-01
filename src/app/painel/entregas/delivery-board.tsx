@@ -13,6 +13,7 @@ import { COURIER_PAY_LABEL, PAYMENT_LABEL, PAYMENT_STATUS, STATUS } from "@/lib/
 import { formatBrPhone, normalizeBrPhone } from "@/lib/phone";
 import { browserClient } from "@/lib/supabase/client";
 import type { Courier, CourierPay, Order, OrderItem, Role } from "@/lib/types";
+import { MapTab } from "./map-tab";
 
 type Row = Order & { order_items: Pick<OrderItem, "id" | "name" | "size_name" | "qty">[] };
 /** Entrega feita e ainda não acertada com o entregador. */
@@ -26,7 +27,7 @@ const mapsLink = (o: Row) =>
 
 export function DeliveryBoard({ pizzeriaId, role }: { pizzeriaId: string; role: Role }) {
   const sb = browserClient();
-  const [tab, setTab] = useState<"fila" | "entregadores" | "acerto">("fila");
+  const [tab, setTab] = useState<"fila" | "mapa" | "entregadores" | "acerto">("fila");
   const [open, setOpen] = useState<Open[]>([]);
   const [orders, setOrders] = useState<Row[] | null>(null);
   const [couriers, setCouriers] = useState<Courier[]>([]);
@@ -108,9 +109,9 @@ export function DeliveryBoard({ pizzeriaId, role }: { pizzeriaId: string; role: 
         subtitle={live ? "Ao vivo: os pedidos de entrega aparecem aqui sozinhos." : "Conectando… atualiza a cada 30 s."}
         actions={
           <div className="flex gap-1 rounded-full bg-sand p-1 text-sm font-bold">
-            {(MANAGE.includes(role) ? (["fila", "entregadores", "acerto"] as const) : (["fila", "entregadores"] as const)).map((k) => (
+            {(MANAGE.includes(role) ? (["fila", "mapa", "entregadores", "acerto"] as const) : (["fila", "mapa", "entregadores"] as const)).map((k) => (
               <button key={k} onClick={() => setTab(k)} className={`rounded-full px-4 py-1.5 ${tab === k ? "bg-surface shadow-sm" : "text-muted"}`}>
-                {k === "fila" ? "Fila de entregas" : k === "entregadores" ? "Entregadores" : "Acerto"}
+                {{ fila: "Fila de entregas", mapa: "Mapa ao vivo", entregadores: "Entregadores", acerto: "Acerto" }[k]}
               </button>
             ))}
           </div>
@@ -127,6 +128,8 @@ export function DeliveryBoard({ pizzeriaId, role }: { pizzeriaId: string; role: 
         <div className="grid place-items-center py-20">
           <Spinner className="h-7 w-7 text-tomato" />
         </div>
+      ) : tab === "mapa" ? (
+        <MapTab pizzeriaId={pizzeriaId} orders={list} onGeocoded={refresh} />
       ) : tab === "acerto" ? (
         <Settlement couriers={couriers} open={open} onChanged={refresh} />
       ) : tab === "entregadores" ? (

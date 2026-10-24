@@ -1,16 +1,19 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { Bike } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Bike, MapPin } from "lucide-react";
 import { toast } from "sonner";
+import { LiveMap, type MapPoint } from "@/components/map/live-map";
 import { Field, Panel, Spinner, Toggle } from "@/components/ui";
 import { MoneyInput } from "@/components/ui/money-input";
 import { dbError } from "@/lib/db-error";
+import type { LatLng } from "@/lib/geo";
 import { centsToInput, parseMoney } from "@/lib/money";
 import { COURIER_PAY_LABEL } from "@/lib/order-labels";
 import { browserClient } from "@/lib/supabase/client";
 import type { CourierPay, Pizzeria } from "@/lib/types";
+import { setStoreLocation } from "../entregas/geo-actions";
 
 /** Regras dos entregadores. Salva à parte do resto das configurações. */
 export function DeliveryRules({ pizzeria: pz }: { pizzeria: Pizzeria }) {
@@ -81,8 +84,47 @@ export function DeliveryRules({ pizzeria: pz }: { pizzeria: Pizzeria }) {
           <button className="btn" disabled={busy} onClick={save}>
             {busy ? <Spinner className="h-4 w-4" /> : <Bike className="h-4 w-4" />} Salvar regras dos entregadores
           </button>
+          <StorePin pizzeriaId={pz.id} initial={pz.lat != null && pz.lng != null ? { lat: pz.lat, lng: pz.lng } : null} hasAddress={!!pz.address} />
         </div>
       )}
     </Panel>
+  );
+}
+
+/** Ponto da loja no mapa: base para achar os endereços dos clientes e para a rota dos entregadores. */
+function StorePin({ pizzeriaId, initial, hasAddress }: { pizzeriaId: string; initial: LatLng | null; hasAddress: boolean }) {
+  const router = useRouter();
+  const [pos, setPos] = useState<LatLng | null>(initial);
+  const [busy, setBusy] = useState(false);
+  const points = useMemo<MapPoint[]>(() => (pos ? [{ id: "loja", kind: "store", ...pos, label: "Loja" }] : []), [pos]);
+  const dirty = pos != null && (pos.lat !== initial?.lat || pos.lng !== initial?.lng);
+  const save = async () => {
+    if (!pos) return;
+    setBusy(true);
+    const r = await setStoreLocation(pizzeriaId, pos);
+    setBusy(false);
+    if (r.ok) {
+      toast.success(r.message);
+      router.refresh();
+    } else toast.error(r.message);
+  };
+  return (
+    <div className="space-y-2 border-t pt-4">
+      <p className="text-sm font-semibold">Ponto da loja no mapa</p>
+      <p className="text-xs text-muted">
+        {initial
+          ? "Confira se o ícone 🍕 está no lugar certo. Se não estiver, toque no mapa em cima da loja e salve."
+          : hasAddress
+            ? "Ainda não achamos a loja pelo endereço. Aproxime o mapa, toque em cima da loja e salve."
+            : "Preencha o endereço da loja acima ou toque no mapa em cima da loja e salve."}{" "}
+        É a partir daqui que o sistema acha os endereços dos clientes e monta a rota.
+      </p>
+      <LiveMap points={points} height={280} onPick={setPos} />
+      {dirty && (
+        <button className="btn-dark !py-2 text-sm" disabled={busy} onClick={save}>
+          {busy ? <Spinner className="h-4 w-4" /> : <MapPin className="h-4 w-4" />} Salvar ponto da loja
+        </button>
+      )}
+    </div>
   );
 }

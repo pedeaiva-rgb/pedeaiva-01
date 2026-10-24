@@ -3,12 +3,14 @@ import type { Metadata } from "next";
 import { Bike, Check, Clock, Phone, Receipt, XCircle } from "lucide-react";
 import { PavSymbol } from "@/components/brand/logo";
 import { SetupNotice } from "@/components/setup-notice";
+import { distanceKm, etaMinutes, formatKm, type LatLng } from "@/lib/geo";
 import { brl } from "@/lib/money";
 import { flowFor, PAYMENT_LABEL, PAYMENT_STATUS, STATUS } from "@/lib/order-labels";
 import { publicClient } from "@/lib/supabase/server";
 import { supabaseConfigured } from "@/lib/supabase/env";
 import type { Fulfillment, OrderStatus, PaymentMethod, PaymentStatus } from "@/lib/types";
 import { AutoRefresh } from "./auto-refresh";
+import { TrackMap } from "./track-map";
 
 export const metadata: Metadata = { title: "Acompanhe seu pedido", robots: { index: false } };
 
@@ -27,6 +29,7 @@ type Tracking = {
   eta_max: number | null;
   courier_name?: string | null;
   delivery_code?: string | null;
+  map?: { dest: LatLng | null; store: LatLng | null; courier: (LatLng & { at: string }) | null } | null;
   pizzeria: { name: string; slug: string; phone: string | null };
   items: { name: string; size_name: string | null; qty: number; subtotal_cents: number; extras: { name: string }[] }[];
   events: { status: OrderStatus; at: string }[];
@@ -105,6 +108,22 @@ export default async function TrackingPage({ params }: PageProps<"/pedido/[token
           </p>
         </div>
       </div>
+
+      {t.map && (t.map.courier || t.map.dest) && (
+        <div className="card mt-4 space-y-2 p-3">
+          <TrackMap store={t.map.store} dest={t.map.dest} courier={t.map.courier} courierName={t.courier_name ?? null} />
+          <p className="px-1 text-sm">
+            {t.map.courier && t.map.dest ? (
+              <>
+                {t.courier_name ?? "O entregador"} está a <b>{formatKm(distanceKm(t.map.courier, t.map.dest))}</b> · chega em cerca de{" "}
+                <b>{etaMinutes(distanceKm(t.map.courier, t.map.dest))} min</b>
+              </>
+            ) : (
+              "A posição do entregador aparece aqui assim que o celular dele enviar."
+            )}
+          </p>
+        </div>
+      )}
 
       {!cancelled && (
         <ol className="card mt-4 p-5">
