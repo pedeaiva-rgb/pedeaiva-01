@@ -639,3 +639,20 @@ describe("tela da cozinha por link", () => {
     expect((await open()).token).toBeTruthy();
   });
 });
+
+describe("cozinha: cancelados", () => {
+  it("o link mostra o cancelado que já estava na cozinha, com o motivo", async () => {
+    const code = (await one<{ code: string }>(user(OWNER_A), "select * from public.kitchen_link($1)", [pzA])).code;
+    const dev = (await one<{ r: { token: string } }>(ANON, "select public.kitchen_open($1, null) r", [code])).r.token;
+    const naCozinha = await createOrder(orderPayload({ channel: "telefone", customer_phone: "71966660001" }));
+    await one(user(OWNER_A), "select public.transition_order($1, 'confirmado')", [naCozinha.order_id]);
+    await one(user(OWNER_A), "select public.transition_order($1, 'cancelado', 'cliente desistiu')", [naCozinha.order_id]);
+    const nunca = await createOrder(orderPayload({ channel: "telefone", customer_phone: "71966660002" }));
+    await one(user(OWNER_A), "select public.transition_order($1, 'cancelado', 'teste')", [nunca.order_id]);
+    const t = (await one<{ t: { tickets: { id: string; status: string; cancel: { note: string; from: string } | null }[] } }>(ANON, "select public.kitchen_tickets($1) t", [dev])).t;
+    const c = t.tickets.find((x) => x.id === naCozinha.order_id)!;
+    expect(c.status).toBe("cancelado");
+    expect(c.cancel).toMatchObject({ note: "cliente desistiu", from: "confirmado" });
+    expect(t.tickets.some((x) => x.id === nunca.order_id)).toBe(false);
+  });
+});
