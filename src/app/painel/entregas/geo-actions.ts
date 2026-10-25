@@ -1,9 +1,9 @@
 "use server";
 
-import { customerQueries } from "@/lib/address-key";
+import { blankNumber, customerQueries } from "@/lib/address-key";
 import { lookupPoint, rememberPoint, storeCity } from "@/lib/address-points";
 import { distanceKm, type LatLng } from "@/lib/geo";
-import { addressQueries, geocodeFirst, pause } from "@/lib/geocode";
+import { addressQueries, geocodeFirst, googleGeocode, hasGoogle, pause } from "@/lib/geocode";
 import { adminClient } from "@/lib/supabase/admin";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { ACCESS, hasRole } from "@/lib/tenant";
@@ -16,7 +16,7 @@ const MAX_KM = 15;
 
 /**
  * Coloca no mapa a loja e os endereços das entregas em andamento que ainda não têm ponto.
- * Primeiro usa os endereços que a loja já conhece; depois o mapa gratuito, aos poucos.
+ * Primeiro usa os endereços que a loja já conhece; depois o Google (se tiver chave) e o mapa gratuito.
  */
 export async function ensureGeocoded(pizzeriaId: string): Promise<GeoResult> {
   if (!(await hasRole(pizzeriaId, [...ACCESS.entregas, ...ACCESS.entregador]))) return { updated: 0, store: false };
@@ -26,7 +26,7 @@ export async function ensureGeocoded(pizzeriaId: string): Promise<GeoResult> {
 
   let store: LatLng | null = pz.lat != null && pz.lng != null ? { lat: pz.lat, lng: pz.lng } : null;
   if (!store && pz.address) {
-    store = (await geocodeFirst(addressQueries(pz.address)))?.pos ?? null;
+    store = (await googleGeocode(pz.address))?.pos ?? (await geocodeFirst(addressQueries(pz.address)))?.pos ?? null;
     if (store) await admin.from("pizzerias").update({ lat: store.lat, lng: store.lng }).eq("id", pizzeriaId);
     return { updated: 0, store: !!store };
   }
@@ -52,7 +52,18 @@ export async function ensureGeocoded(pizzeriaId: string): Promise<GeoResult> {
     const known = await lookupPoint(pizzeriaId, a);
     let pos: LatLng | null = known?.pos ?? null;
     let status: "ok" | "aproximado" | "falhou" = known ? (known.exact ? "ok" : "aproximado") : "falhou";
-    if (!known) {
+    if (!known && hasGoogle()) {
+      // Google primeiro: rua e número; se não achar a rua, o condomínio do complemento.
+      const num = blankNumber(a.number) ? "" : `, ${a.number}`;
+      const c = city ? `, ${city}` : "";
+      let g = await googleGeocode(`${a.street}${num} - ${a.neighborhood}${c}`, store, MAX_KM);
+      if (!g?.precise && a.complement?.trim()) g = (await googleGeocode(`${a.complement}, ${a.neighborhood}${c}`, store, MAX_KM)) ?? g;
+      if (g) {
+        pos = g.pos;
+        status = g.precise ? "ok" : "aproximado";
+      }
+    }
+    if (!pos) {
       if (asked) await pause(1100);
       asked = true;
       const { queries, exact } = customerQueries(a, city);

@@ -48,3 +48,42 @@ export async function geocodeFirst(queries: string[], near?: LatLng | null, maxK
 }
 
 export { addressQueries } from "./address-queries";
+
+/** Chave do Google só do servidor (busca de endereços). Sem ela, fica só o mapa gratuito. */
+export const hasGoogle = () => !!process.env.GOOGLE_MAPS_SERVER_KEY;
+
+type GoogleHit = { geometry: { location: { lat: number; lng: number }; location_type: string }; types: string[]; partial_match?: boolean };
+
+/**
+ * Endereço → ponto pelo Google (conhece muito mais ruas e condomínios no Brasil).
+ * `precise`: casa/número, rua ou condomínio; senão é só bairro ou cidade.
+ */
+export async function googleGeocode(address: string, near?: LatLng | null, maxKm = 40): Promise<{ pos: LatLng; precise: boolean } | null> {
+  const key = process.env.GOOGLE_MAPS_SERVER_KEY;
+  if (!key) return null;
+  const u = new URL("https://maps.googleapis.com/maps/api/geocode/json");
+  u.searchParams.set("address", address);
+  u.searchParams.set("key", key);
+  u.searchParams.set("language", "pt-BR");
+  u.searchParams.set("region", "br");
+  u.searchParams.set("components", "country:BR");
+  if (near) u.searchParams.set("bounds", `${near.lat - 0.2},${near.lng - 0.2}|${near.lat + 0.2},${near.lng + 0.2}`);
+  try {
+    const res = await fetch(u, { signal: AbortSignal.timeout(6000), cache: "no-store" });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { status: string; results: GoogleHit[] };
+    if (body.status !== "OK") {
+      if (body.status !== "ZERO_RESULTS") console.error("Google Geocoding:", body.status);
+      return null;
+    }
+    const hit = body.results[0]!;
+    const pos = { lat: hit.geometry.location.lat, lng: hit.geometry.location.lng };
+    if (near && distanceKm(near, pos) > maxKm) return null;
+    const kind = hit.geometry.location_type;
+    const precise =
+      kind === "ROOFTOP" || kind === "RANGE_INTERPOLATED" || hit.types.some((t) => ["street_address", "premise", "subpremise", "route", "establishment", "point_of_interest"].includes(t));
+    return { pos, precise };
+  } catch {
+    return null;
+  }
+}

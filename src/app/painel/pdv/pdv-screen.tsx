@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Minus, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { fetchDeliveryCode } from "@/components/delivery-code";
 import { ProductBuilder } from "@/components/store/product-builder";
 import { QuoteSummary } from "@/components/store/quote-summary";
 import { Drawer, Empty, Field, Spinner } from "@/components/ui";
@@ -78,6 +79,11 @@ export function PdvScreen({ menu, canReceive }: { menu: Menu; canReceive: boolea
       if (!r.ok) return void toast.error(r.error);
       if (r.payment_error) toast.error(r.payment_error);
       toast.success(`Pedido #${r.number} registrado · ${brl(r.total_cents)}`);
+      // Entrega: o atendente já fala o código ao cliente antes de desligar.
+      if (mode === "entrega") {
+        const code = await fetchDeliveryCode(r.id);
+        if (code) toast.message(`Código de entrega do #${r.number}: ${code}`, { description: "Fale este código para o cliente. Ele informa ao entregador na hora de receber.", duration: 30_000 });
+      }
       idempotencyKey(`pdv:${pz}`, true);
       setCart([]);
       setF(EMPTY);

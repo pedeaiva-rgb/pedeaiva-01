@@ -3,19 +3,17 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { Banknote, Bell, BellOff, CheckCircle2, Hand, LocateFixed, LocateOff, MapPin, MessageCircle, Navigation, Phone, Route, Send, Smartphone, Undo2, Wallet } from "lucide-react";
 import { toast } from "sonner";
-import { LiveMap, type MapPoint } from "@/components/map/live-map";
 import { Empty, Panel, Spinner } from "@/components/ui";
 import { beep, minutesSince, startOfTodaySP, timeSP } from "@/lib/beep";
 import { dbError } from "@/lib/db-error";
 import { blankNumber } from "@/lib/address-key";
-import { distanceKm, etaMinutes, formatKm, googleRouteUrl, planRoute, type LatLng } from "@/lib/geo";
+import { googleRouteUrl } from "@/lib/geo";
 import { brl } from "@/lib/money";
 import { PAYMENT_LABEL } from "@/lib/order-labels";
 import { formatBrPhone } from "@/lib/phone";
 import { browserClient } from "@/lib/supabase/client";
 import type { Courier, Order, OrderItem } from "@/lib/types";
-import { ensureGeocoded, setOrderLocation } from "../entregas/geo-actions";
-import { useCourierGps, useWakeLock, type Gps, type GpsStatus } from "./use-courier-gps";
+import { useCourierGps, useWakeLock, type GpsStatus } from "./use-courier-gps";
 
 type Row = Order & { order_items: Pick<OrderItem, "id" | "name" | "size_name" | "qty">[] };
 type Done = Pick<Order, "id" | "number" | "delivered_at" | "delivery_fee_cents" | "courier_pay_cents" | "courier_cash_cents" | "settled_at" | "zone_name"> & {
@@ -28,13 +26,12 @@ const addressText = (o: Pick<Order, "address">, city: string | null) =>
   o.address
     ? [`${o.address.street}${blankNumber(o.address.number) ? "" : `, ${o.address.number}`}`, o.address.complement, o.address.neighborhood, city].filter(Boolean).join(", ")
     : "";
-/** Com ponto certo no mapa, a navegação vai pelas coordenadas; senão, pelo endereço escrito. */
-const navTarget = (o: Row, city: string | null) => (o.geo_status === "ok" && o.dest_lat != null ? `${o.dest_lat},${o.dest_lng}` : addressText(o, city));
+/** Com o ponto que o próprio cliente marcou no checkout vai pelas coordenadas; senão, pelo endereço escrito (o Google acha). */
+const fromCustomer = (o: Row) => o.geo_status === "ok" && o.dest_lat != null && o.dest_lng != null;
+const navTarget = (o: Row, city: string | null) => (fromCustomer(o) ? `${o.dest_lat},${o.dest_lng}` : addressText(o, city));
 const googleMaps = (o: Row, city: string | null) => `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${encodeURIComponent(navTarget(o, city))}`;
 const waze = (o: Row, city: string | null) =>
-  o.geo_status === "ok" && o.dest_lat != null
-    ? `https://waze.com/ul?navigate=yes&ll=${o.dest_lat},${o.dest_lng}`
-    : `https://waze.com/ul?navigate=yes&q=${encodeURIComponent(addressText(o, city))}`;
+  fromCustomer(o) ? `https://waze.com/ul?navigate=yes&ll=${o.dest_lat},${o.dest_lng}` : `https://waze.com/ul?navigate=yes&q=${encodeURIComponent(addressText(o, city))}`;
 
 /** O que o entregador tem que receber na porta. */
 function toCollect(o: Order) {
@@ -50,8 +47,6 @@ function toCollect(o: Order) {
   return { label: `Pix de ${brl(o.total_cents)} ainda não confirmado: confira com a loja`, warn: true };
 }
 
-const destOf = (o: Pick<Order, "dest_lat" | "dest_lng">): LatLng | null => (o.dest_lat != null && o.dest_lng != null ? { lat: o.dest_lat, lng: o.dest_lng } : null);
-type Leg = { seq: number; km: number | null };
 
 const GPS_LABEL: Record<GpsStatus, string> = {
   desligado: "Localização desligada (liga sozinha quando você sai para entrega)",
@@ -66,14 +61,12 @@ export function DriverApp({
   courier,
   selfAssign,
   requireCode,
-  store,
   city,
 }: {
   pizzeriaId: string;
   courier: Courier;
   selfAssign: boolean;
   requireCode: boolean;
-  store: LatLng | null;
   /** Cidade da loja, para o Google Maps não errar de lugar. */
   city: string | null;
 }) {
@@ -167,38 +160,10 @@ export function DriverApp({
 
   // Em rota: GPS ao vivo e tela acesa.
   const enRoute = mine.some((o) => o.status === "saiu");
-  const { gps, status: gpsStatus } = useCourierGps(pizzeriaId, enRoute);
+  const { status: gpsStatus } = useCourierGps(pizzeriaId, enRoute);
   const awake = useWakeLock(enRoute);
-
-  // Endereços ainda sem ponto no mapa: pede para localizar (no máximo 1 vez por minuto).
-  const geoAsked = useRef(0);
-  const needGeo = mine.some((o) => o.geo_status == null);
-  useEffect(() => {
-    if (!needGeo || Date.now() - geoAsked.current < 60_000) return;
-    geoAsked.current = Date.now();
-    ensureGeocoded(pizzeriaId).then((r) => r.updated && void reload());
-  }, [needGeo, pizzeriaId]);
-
-  // Ordem sugerida: a partir de onde você está (ou da loja), sempre a parada mais perto.
-  const start = gps ?? store;
-  const plan = planRoute(start, mine, destOf);
-  const legs = new Map<string, Leg>();
-  let prev = start;
-  plan.forEach((o, i) => {
-    const d = destOf(o);
-    legs.set(o.id, { seq: i + 1, km: prev && d ? distanceKm(prev, d) : null });
-    if (d) prev = d;
-  });
-  const points: MapPoint[] = [
-    ...(store ? [{ id: "loja", kind: "store" as const, ...store, label: "Loja" }] : []),
-    ...(gps ? [{ id: "eu", kind: "courier" as const, lat: gps.lat, lng: gps.lng, label: "Você" }] : []),
-    ...plan.flatMap((o) => {
-      const d = destOf(o);
-      return d ? [{ id: o.id, kind: "stop" as const, ...d, seq: legs.get(o.id)!.seq, approx: o.geo_status === "aproximado", label: `#${o.number} · ${o.customer_name}` }] : [];
-    }),
-  ];
-  const line = [start, ...plan.map(destOf)].filter((p): p is LatLng => !!p).map((p) => [p.lat, p.lng] as [number, number]);
-  const routeUrl = plan.length > 1 ? googleRouteUrl(plan.map((o) => navTarget(o, city))) : null;
+  // Várias entregas: uma rota só no Google Maps, na ordem da lista (o Google acha os endereços).
+  const routeUrl = mine.length > 1 ? googleRouteUrl(mine.map((o) => navTarget(o, city))) : null;
 
   const tabs: [Tab, string, number | null][] = [
     ...(selfAssign ? [["disponiveis", "Disponíveis", available.length] as [Tab, string, number]] : []),
@@ -245,7 +210,6 @@ export function DriverApp({
         <div className="space-y-3">
           {mine.length > 0 && (
             <div className="card space-y-3 p-3">
-              {points.some((p) => p.kind === "stop") && <LiveMap points={points} lines={line.length > 1 ? [{ id: "rota", points: line }] : undefined} height={240} />}
               <p className={`flex items-start gap-1.5 text-xs font-semibold ${gpsStatus === "ligado" ? "text-success" : gpsStatus === "negado" || gpsStatus === "indisponivel" ? "text-danger" : "text-muted"}`}>
                 {gpsStatus === "ligado" ? <LocateFixed className="h-4 w-4 shrink-0" /> : <LocateOff className="h-4 w-4 shrink-0" />} {GPS_LABEL[gpsStatus]}
               </p>
@@ -257,7 +221,7 @@ export function DriverApp({
               )}
               {routeUrl && (
                 <a href={routeUrl} target="_blank" rel="noreferrer" className="btn-dark w-full !py-2.5 text-sm">
-                  <Route className="h-4 w-4" /> Rota completa no Google Maps ({plan.length} paradas)
+                  <Route className="h-4 w-4" /> Rota completa no Google Maps ({mine.length} paradas)
                 </a>
               )}
             </div>
@@ -265,7 +229,7 @@ export function DriverApp({
           {mine.length === 0 ? (
             <Empty>{selfAssign ? "Você não tem entregas agora. Veja os pedidos em “Disponíveis”." : "Você não tem entregas agora. A loja vai te passar os pedidos."}</Empty>
           ) : (
-            plan.map((o) => <MyCard key={o.id} o={o} now={now} city={city} gps={gps} requireCode={requireCode} leg={mine.length > 1 ? legs.get(o.id) : undefined} onChanged={refresh} />)
+            mine.map((o) => <MyCard key={o.id} o={o} now={now} city={city} requireCode={requireCode} onChanged={refresh} />)
           )}
         </div>
       )}
@@ -326,17 +290,13 @@ function MyCard({
   o,
   now,
   city,
-  gps,
   requireCode,
-  leg,
   onChanged,
 }: {
   o: Row;
   now: number;
   city: string | null;
-  gps: Gps | null;
   requireCode: boolean;
-  leg?: Leg;
   onChanged: () => Promise<void>;
 }) {
   const sb = browserClient();
@@ -347,11 +307,6 @@ function MyCard({
 
   return (
     <article className={`card p-4 ${late ? "ring-2 ring-tomato" : ""}`}>
-      {leg && (
-        <p className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-dende px-3 py-1 text-xs font-extrabold text-ink">
-          {leg.seq}ª parada{leg.km != null ? ` · ${formatKm(leg.km)} · ~${etaMinutes(leg.km)} min` : ""}
-        </p>
-      )}
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="font-brand text-3xl leading-none font-extrabold">#{o.number}</p>
@@ -398,26 +353,6 @@ function MyCard({
               <Navigation className="h-4 w-4" /> Waze
             </a>
           </div>
-          {o.geo_status !== "ok" && (
-            <p className="mt-2 text-xs font-semibold text-warning">
-              ⚠ O ponto deste endereço no mapa é {o.geo_status === "aproximado" ? "só aproximado (pelo bairro)" : "desconhecido"}. Confirme o caminho com o cliente.
-            </p>
-          )}
-          {o.status === "saiu" && gps && (
-            <button
-              className="mt-2 w-full text-center text-xs font-bold text-tomato"
-              disabled={busy}
-              onClick={async () => {
-                if (!confirm("Você está na porta do cliente agora? O ponto deste endereço vai ficar guardado para as próximas entregas.")) return;
-                const r = await setOrderLocation(o.id, { lat: gps.lat, lng: gps.lng });
-                if (r.ok) toast.success(r.message);
-                else toast.error(r.message);
-                await onChanged();
-              }}
-            >
-              <MapPin className="mr-1 inline h-3 w-3" /> Estou na porta: guardar este ponto no mapa
-            </button>
-          )}
         </div>
       )}
 

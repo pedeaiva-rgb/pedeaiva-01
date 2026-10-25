@@ -31,7 +31,7 @@ const NO_LINES: MapLine[] = [];
  * Mapa do OpenStreetMap (gratuito) com a loja, os entregadores e as paradas.
  * Atualiza os pontos sem perder o zoom; só reenquadra quando entram ou saem pontos.
  */
-export function LiveMap({
+function LeafletLiveMap({
   points,
   lines = NO_LINES,
   height = 320,
@@ -100,5 +100,128 @@ export function LiveMap({
     }
   }, [ready, points, lines]);
 
+  return <div ref={box} style={{ height }} className="relative z-0 w-full overflow-hidden rounded-2xl bg-sand" aria-label="Mapa das entregas" />;
+}
+
+type Props = Parameters<typeof LeafletLiveMap>[0];
+/** Chave do Google para o navegador (restrita ao site). Sem ela, o mapa é o gratuito do OpenStreetMap. */
+const GOOGLE_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? "";
+
+/**
+ * Mapa das entregas. Com chave do Google usa o Google Maps (os pontos achados pelo Google
+ * só podem aparecer em mapa do Google); sem chave, o OpenStreetMap.
+ */
+export function LiveMap(props: Props) {
+  return GOOGLE_KEY ? <GoogleLiveMap {...props} /> : <LeafletLiveMap {...props} />;
+}
+
+let googleReady: Promise<typeof google.maps> | null = null;
+function loadGoogle(): Promise<typeof google.maps> {
+  googleReady ??= new Promise((resolve, reject) => {
+    (window as unknown as Record<string, () => void>).__pavGoogleMaps = () => resolve(google.maps);
+    const s = document.createElement("script");
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(GOOGLE_KEY)}&callback=__pavGoogleMaps&language=pt-BR&region=BR&v=weekly`;
+    s.async = true;
+    s.onerror = () => {
+      googleReady = null;
+      reject(new Error("Google Maps não carregou"));
+    };
+    document.head.appendChild(s);
+  });
+  return googleReady;
+}
+
+const G_STYLE: Record<MapPoint["kind"], { scale: number; fill: string; stroke: string }> = {
+  store: { scale: 15, fill: "#1f1b18", stroke: "#f0a830" },
+  courier: { scale: 17, fill: "#e4472d", stroke: "#ffffff" },
+  stop: { scale: 13, fill: "#f0a830", stroke: "#1f1b18" },
+};
+
+function GoogleLiveMap({ points, lines = NO_LINES, height = 320, onPick }: Props) {
+  const box = useRef<HTMLDivElement>(null);
+  const map = useRef<google.maps.Map | null>(null);
+  const drawn = useRef<(google.maps.Marker | google.maps.Polyline)[]>([]);
+  const info = useRef<google.maps.InfoWindow | null>(null);
+  const pick = useRef(onPick);
+  const framed = useRef("");
+  const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    pick.current = onPick;
+  }, [onPick]);
+
+  useEffect(() => {
+    let alive = true;
+    loadGoogle()
+      .then((g) => {
+        if (!alive || !box.current || map.current) return;
+        map.current = new g.Map(box.current, {
+          center: { lat: -14.2, lng: -51.9 },
+          zoom: 4,
+          streetViewControl: false,
+          mapTypeControl: false,
+          fullscreenControl: false,
+          clickableIcons: false,
+        });
+        info.current = new g.InfoWindow();
+        map.current.addListener("click", (e: google.maps.MapMouseEvent) => e.latLng && pick.current?.(e.latLng.toJSON()));
+        setReady(true);
+      })
+      .catch(() => alive && setFailed(true));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!ready || !m) return;
+    for (const d of drawn.current) d.setMap(null);
+    drawn.current = [];
+    for (const l of lines) {
+      if (l.points.length < 2) continue;
+      drawn.current.push(
+        new google.maps.Polyline({
+          map: m,
+          path: l.points.map(([lat, lng]) => ({ lat, lng })),
+          strokeOpacity: 0,
+          icons: [{ icon: { path: "M 0,-1 0,1", strokeOpacity: 0.8, strokeColor: "#e4472d", scale: 3 }, offset: "0", repeat: "12px" }],
+        }),
+      );
+    }
+    for (const p of points) {
+      const s = G_STYLE[p.kind];
+      const marker = new google.maps.Marker({
+        map: m,
+        position: { lat: p.lat, lng: p.lng },
+        title: p.label,
+        zIndex: p.kind === "courier" ? 1000 : undefined,
+        icon: { path: google.maps.SymbolPath.CIRCLE, scale: s.scale, fillColor: p.kind === "stop" && p.approx ? "#ffffff" : s.fill, fillOpacity: 1, strokeColor: s.stroke, strokeWeight: 3 },
+        label:
+          p.kind === "stop"
+            ? { text: String(p.seq ?? "•"), color: "#1f1b18", fontWeight: "800", fontSize: "13px" }
+            : { text: p.kind === "store" ? "🍕" : "🛵", fontSize: "16px" },
+      });
+      marker.addListener("click", () => {
+        info.current?.setContent(p.label);
+        info.current?.open({ map: m, anchor: marker });
+      });
+      drawn.current.push(marker);
+    }
+    const key = points.map((p) => p.id).sort().join("|");
+    if (key !== framed.current && points.length) {
+      framed.current = key;
+      if (points.length === 1) {
+        m.setCenter({ lat: points[0]!.lat, lng: points[0]!.lng });
+        m.setZoom(15);
+      } else {
+        const b = new google.maps.LatLngBounds();
+        for (const p of points) b.extend({ lat: p.lat, lng: p.lng });
+        m.fitBounds(b, 36);
+      }
+    }
+  }, [ready, points, lines]);
+
+  if (failed) return <LeafletLiveMap points={points} lines={lines} height={height} onPick={onPick} />;
   return <div ref={box} style={{ height }} className="relative z-0 w-full overflow-hidden rounded-2xl bg-sand" aria-label="Mapa das entregas" />;
 }

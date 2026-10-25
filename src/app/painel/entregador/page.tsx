@@ -32,7 +32,6 @@ export default async function EntregadorPage() {
       selfAssign={t.pizzeria.couriers_self_assign ?? true}
       requireCode={t.pizzeria.require_delivery_code ?? true}
       city={storeCity(t.pizzeria.address)}
-      store={t.pizzeria.lat != null && t.pizzeria.lng != null ? { lat: t.pizzeria.lat, lng: t.pizzeria.lng } : null}
     />
   );
 }

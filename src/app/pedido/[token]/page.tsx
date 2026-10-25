@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { Bike, Check, Clock, Phone, Receipt, XCircle } from "lucide-react";
 import { PavSymbol } from "@/components/brand/logo";
 import { SetupNotice } from "@/components/setup-notice";
-import { distanceKm, etaMinutes, formatKm, type LatLng } from "@/lib/geo";
+import type { LatLng } from "@/lib/geo";
 import { brl } from "@/lib/money";
 import { flowFor, PAYMENT_LABEL, PAYMENT_STATUS, STATUS } from "@/lib/order-labels";
 import { publicClient } from "@/lib/supabase/server";
@@ -109,19 +109,18 @@ export default async function TrackingPage({ params }: PageProps<"/pedido/[token
         </div>
       </div>
 
-      {t.map && (t.map.courier || t.map.dest) && (
+      {t.map && (
         <div className="card mt-4 space-y-2 p-3">
-          <TrackMap store={t.map.store} dest={t.map.dest} courier={t.map.courier} courierName={t.courier_name ?? null} />
-          <p className="px-1 text-sm">
-            {t.map.courier && t.map.dest ? (
-              <>
-                {t.courier_name ?? "O entregador"} está a <b>{formatKm(distanceKm(t.map.courier, t.map.dest))}</b> · chega em cerca de{" "}
-                <b>{etaMinutes(distanceKm(t.map.courier, t.map.dest))} min</b>
-              </>
-            ) : (
-              "A posição do entregador aparece aqui assim que o celular dele enviar."
-            )}
-          </p>
+          {t.map.courier ? (
+            <>
+              <TrackMap store={t.map.store} courier={t.map.courier} courierName={t.courier_name ?? null} />
+              <p className="px-1 text-sm">
+                🛵 {t.courier_name ?? "O entregador"} está a caminho · posição de {time(t.map.courier.at)}
+              </p>
+            </>
+          ) : (
+            <p className="px-1 text-sm text-muted">A posição do entregador aparece aqui assim que o celular dele enviar.</p>
+          )}
         </div>
       )}
 

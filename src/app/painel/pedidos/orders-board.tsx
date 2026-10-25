@@ -4,6 +4,7 @@ import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react"
 import { Bell, BellOff, Bike, MessageCircle, Phone, Printer, Store, X } from "lucide-react";
 import { toast } from "sonner";
 import { Receipt } from "@/components/receipt";
+import { DeliveryCode } from "@/components/delivery-code";
 import { Drawer, Empty, PageHeader, Spinner } from "@/components/ui";
 import { beep, minutesSince, startOfTodaySP, timeSP } from "@/lib/beep";
 import { dbError } from "@/lib/db-error";
@@ -229,6 +230,8 @@ function OrderDrawer({ o, role, storeName, onClose, onChanged }: { o: Row; role:
             {new Date(o.created_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })} · {CHANNEL_LABEL[o.channel]}
           </span>
         </div>
+
+        {o.fulfillment === "entrega" && !["entregue", "cancelado"].includes(o.status) && <DeliveryCode orderId={o.id} />}
 
         <div className="rounded-2xl bg-surface p-4 shadow-[var(--shadow-soft)]">
           <p className="font-bold">{o.customer_name}</p>

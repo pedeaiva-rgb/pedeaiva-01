@@ -4,17 +4,14 @@ import { useMemo } from "react";
 import { LiveMap, type MapPoint } from "@/components/map/live-map";
 import type { LatLng } from "@/lib/geo";
 
-/** Mapa do acompanhamento: onde está o entregador, a loja e a casa do cliente. */
-export function TrackMap({ store, dest, courier, courierName }: { store: LatLng | null; dest: LatLng | null; courier: LatLng | null; courierName: string | null }) {
+/** Mapa do acompanhamento: onde está o entregador agora (e a pizzaria, de referência). */
+export function TrackMap({ store, courier, courierName }: { store: LatLng | null; courier: LatLng; courierName: string | null }) {
   const points = useMemo<MapPoint[]>(
     () => [
       ...(store ? [{ id: "loja", kind: "store" as const, ...store, label: "Pizzaria" }] : []),
-      ...(dest ? [{ id: "casa", kind: "stop" as const, ...dest, seq: undefined, label: "Seu endereço" }] : []),
-      ...(courier ? [{ id: "moto", kind: "courier" as const, ...courier, label: courierName ?? "Entregador" }] : []),
+      { id: "moto", kind: "courier" as const, lat: courier.lat, lng: courier.lng, label: courierName ?? "Entregador" },
     ],
-    [store, dest, courier, courierName],
+    [store, courier.lat, courier.lng, courierName],
   );
-  const lines = useMemo(() => (courier && dest ? [{ id: "rota", points: [[courier.lat, courier.lng], [dest.lat, dest.lng]] as [number, number][] }] : undefined), [courier, dest]);
-  if (!points.length) return null;
-  return <LiveMap points={points} lines={lines} height={260} />;
+  return <LiveMap points={points} height={260} />;
 }

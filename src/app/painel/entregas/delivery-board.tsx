@@ -4,6 +4,7 @@ import { useCallback, useEffect, useEffectEvent, useState } from "react";
 import { Bike, CheckCircle2, HandCoins, MapPin, MessageCircle, Phone, Plus, Send } from "lucide-react";
 import { toast } from "sonner";
 import { Empty, Field, PageHeader, Panel, Spinner, Toggle } from "@/components/ui";
+import { DeliveryCode } from "@/components/delivery-code";
 import { MoneyInput } from "@/components/ui/money-input";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { minutesSince, startOfTodaySP, timeSP } from "@/lib/beep";
@@ -134,7 +135,7 @@ export function DeliveryBoard({ pizzeriaId, role }: { pizzeriaId: string; role: 
           <Spinner className="h-7 w-7 text-tomato" />
         </div>
       ) : tab === "mapa" ? (
-        <MapTab pizzeriaId={pizzeriaId} orders={list} onGeocoded={refresh} />
+        <MapTab pizzeriaId={pizzeriaId} orders={list} />
       ) : tab === "acerto" ? (
         <Settlement couriers={couriers} open={open} onChanged={refresh} />
       ) : tab === "entregadores" ? (
@@ -238,6 +239,11 @@ function DeliveryCard({ o, now, couriers, role, onChanged }: { o: Row; now: numb
         <b className="text-sm">{brl(o.total_cents)}</b>
       </div>
       {change != null && change > 0 && <p className="mt-1 text-xs font-bold text-warning">Levar troco: {brl(change)} (para {brl(o.change_for_cents!)})</p>}
+      {o.status !== "entregue" && (
+        <div className="mt-1">
+          <DeliveryCode orderId={o.id} compact />
+        </div>
+      )}
 
       <div className="mt-3 space-y-2">
         {o.status !== "entregue" && ASSIGN.includes(role) && (
