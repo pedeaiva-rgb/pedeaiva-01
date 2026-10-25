@@ -153,6 +153,9 @@ export type Courier = {
   last_lat: number | null;
   last_lng: number | null;
   last_seen_at: string | null;
+  /** Em turno: compartilha a localização mesmo sem entrega em rota. */
+  on_duty: boolean;
+  on_duty_since: string | null;
 };
 
 export type Menu = {

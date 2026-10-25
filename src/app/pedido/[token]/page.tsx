@@ -11,6 +11,7 @@ import { supabaseConfigured } from "@/lib/supabase/env";
 import type { Fulfillment, OrderStatus, PaymentMethod, PaymentStatus } from "@/lib/types";
 import { AutoRefresh } from "./auto-refresh";
 import { TrackMap } from "./track-map";
+import { LIVE_TRACKING } from "@/lib/features";
 
 export const metadata: Metadata = { title: "Acompanhe seu pedido", robots: { index: false } };
 
@@ -109,7 +110,7 @@ export default async function TrackingPage({ params }: PageProps<"/pedido/[token
         </div>
       </div>
 
-      {t.map && (
+      {LIVE_TRACKING && t.map && (
         <div className="card mt-4 space-y-2 p-3">
           {t.map.courier ? (
             <>

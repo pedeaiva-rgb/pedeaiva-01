@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
-import { Banknote, Bell, BellOff, CheckCircle2, Hand, LocateFixed, LocateOff, MapPin, MessageCircle, Navigation, Phone, Route, Send, Smartphone, Undo2, Wallet } from "lucide-react";
+import { Banknote, Bell, BellOff, CheckCircle2, Hand, MapPin, MessageCircle, Navigation, Phone, Route, Send, Undo2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { Empty, Panel, Spinner } from "@/components/ui";
 import { beep, minutesSince, startOfTodaySP, timeSP } from "@/lib/beep";
@@ -13,7 +13,9 @@ import { PAYMENT_LABEL } from "@/lib/order-labels";
 import { formatBrPhone } from "@/lib/phone";
 import { browserClient } from "@/lib/supabase/client";
 import type { Courier, Order, OrderItem } from "@/lib/types";
-import { useCourierGps, useWakeLock, type GpsStatus } from "./use-courier-gps";
+import { LIVE_TRACKING } from "@/lib/features";
+import { LocationPanel } from "./location-panel";
+import { askLocation, useCourierGps, useGeoPermission, useWakeLock } from "./use-courier-gps";
 
 type Row = Order & { order_items: Pick<OrderItem, "id" | "name" | "size_name" | "qty">[] };
 type Done = Pick<Order, "id" | "number" | "delivered_at" | "delivery_fee_cents" | "courier_pay_cents" | "courier_cash_cents" | "settled_at" | "zone_name"> & {
@@ -47,14 +49,6 @@ function toCollect(o: Order) {
   return { label: `Pix de ${brl(o.total_cents)} ainda não confirmado: confira com a loja`, warn: true };
 }
 
-
-const GPS_LABEL: Record<GpsStatus, string> = {
-  desligado: "Localização desligada (liga sozinha quando você sai para entrega)",
-  procurando: "Procurando o GPS…",
-  ligado: "Localização ao vivo ligada: a loja e o cliente veem onde você está",
-  negado: "Localização bloqueada: libere o acesso à localização para este site no navegador",
-  indisponivel: "Este celular/navegador não informou a localização",
-};
 
 export function DriverApp({
   pizzeriaId,
@@ -158,10 +152,47 @@ export function DriverApp({
     if (r) setOrders(r);
   };
 
-  // Em rota: GPS ao vivo e tela acesa.
+  // Em turno ou em rota: GPS ao vivo e tela acesa.
+  const [onDuty, setOnDuty] = useState(courier.on_duty ?? false);
   const enRoute = mine.some((o) => o.status === "saiu");
-  const { status: gpsStatus } = useCourierGps(pizzeriaId, enRoute);
-  const awake = useWakeLock(enRoute);
+  // Rastreio ao vivo desligado por enquanto (ver lib/features): nada de GPS nem turno.
+  const sharing = LIVE_TRACKING && (onDuty || enRoute);
+  const { gps, status: gpsStatus } = useCourierGps(pizzeriaId, sharing);
+  const permission = useGeoPermission();
+  useWakeLock(sharing);
+  const toggleDuty = async (on: boolean) => {
+    if (on) void askLocation();
+    const { error } = await sb.rpc("set_courier_on_duty", { _pz: pizzeriaId, _on: on });
+    if (error) return void toast.error(dbError(error));
+    setOnDuty(on);
+    toast.success(on ? "Turno começado. Deixe esta página aberta." : "Turno encerrado.");
+  };
+  const askAgain = async () => {
+    if (!(await askLocation())) toast.error("A localização não foi liberada. Veja as instruções na tela.");
+  };
+
+  // Lembra de não fechar a página durante o turno (o navegador mostra um aviso ao sair).
+  useEffect(() => {
+    if (!sharing) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [sharing]);
+
+  // Voltou para a página depois de sair dela: lembra de mantê-la aberta.
+  const hiddenAt = useRef<number | null>(null);
+  useEffect(() => {
+    if (!sharing) return;
+    const onVis = () => {
+      if (document.visibilityState === "hidden") hiddenAt.current = Date.now();
+      else if (hiddenAt.current && Date.now() - hiddenAt.current > 60_000) {
+        toast.warning("Mantenha esta página aberta durante o turno.", { duration: 8_000 });
+        hiddenAt.current = null;
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [sharing]);
   // Várias entregas: uma rota só no Google Maps, na ordem da lista (o Google acha os endereços).
   const routeUrl = mine.length > 1 ? googleRouteUrl(mine.map((o) => navTarget(o, city))) : null;
 
@@ -182,6 +213,20 @@ export function DriverApp({
           {sound ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />} {sound ? "Som ligado" : "Ligar som"}
         </button>
       </div>
+
+      {LIVE_TRACKING && (
+      <div className="mb-4">
+        <LocationPanel
+          onDuty={onDuty}
+          enRoute={enRoute}
+          status={gpsStatus}
+          permission={permission}
+          gps={gps}
+          onToggle={toggleDuty}
+          onAsk={askAgain}
+        />
+      </div>
+      )}
 
       <div className="mb-4 flex gap-1 rounded-full bg-sand p-1 text-sm font-bold">
         {tabs.map(([k, label, n]) => (
@@ -208,23 +253,10 @@ export function DriverApp({
         </div>
       ) : (
         <div className="space-y-3">
-          {mine.length > 0 && (
-            <div className="card space-y-3 p-3">
-              <p className={`flex items-start gap-1.5 text-xs font-semibold ${gpsStatus === "ligado" ? "text-success" : gpsStatus === "negado" || gpsStatus === "indisponivel" ? "text-danger" : "text-muted"}`}>
-                {gpsStatus === "ligado" ? <LocateFixed className="h-4 w-4 shrink-0" /> : <LocateOff className="h-4 w-4 shrink-0" />} {GPS_LABEL[gpsStatus]}
-              </p>
-              {enRoute && (
-                <p className="flex items-start gap-1.5 text-xs text-muted">
-                  <Smartphone className="h-4 w-4 shrink-0" />
-                  {awake ? "Tela fica acesa durante a entrega." : "Deixe esta tela aberta no suporte do celular: com a tela apagada o GPS para."}
-                </p>
-              )}
-              {routeUrl && (
-                <a href={routeUrl} target="_blank" rel="noreferrer" className="btn-dark w-full !py-2.5 text-sm">
-                  <Route className="h-4 w-4" /> Rota completa no Google Maps ({mine.length} paradas)
-                </a>
-              )}
-            </div>
+          {routeUrl && (
+            <a href={routeUrl} target="_blank" rel="noreferrer" className="btn-dark w-full !py-2.5 text-sm">
+              <Route className="h-4 w-4" /> Rota completa no Google Maps ({mine.length} paradas)
+            </a>
           )}
           {mine.length === 0 ? (
             <Empty>{selfAssign ? "Você não tem entregas agora. Veja os pedidos em “Disponíveis”." : "Você não tem entregas agora. A loja vai te passar os pedidos."}</Empty>

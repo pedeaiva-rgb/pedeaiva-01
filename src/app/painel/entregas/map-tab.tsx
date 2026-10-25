@@ -54,14 +54,14 @@ export function MapTab({ pizzeriaId, orders }: { pizzeriaId: string; orders: Sto
       orders: orders.filter((o) => o.courier_id === c.id && o.status === "saiu"),
       seen: c.last_seen_at ? minutesSince(c.last_seen_at, now) : null,
     }))
-    .filter((r) => r.orders.length > 0);
+    .filter((r) => r.orders.length > 0 || r.c.on_duty);
 
   const points: MapPoint[] = [];
   if (store?.pos) points.push({ id: "loja", kind: "store", ...store.pos, label: "Loja" });
   for (const r of onRoute) {
     if (!r.pos) continue;
     const late = r.seen != null && r.seen >= STALE_MIN;
-    points.push({ id: `c-${r.c.id}`, kind: "courier", ...r.pos, label: `${r.c.name} · #${r.orders.map((o) => o.number).join(", #")}${late ? ` · sem sinal há ${r.seen} min` : ""}` });
+    points.push({ id: `c-${r.c.id}`, kind: "courier", ...r.pos, label: `${r.c.name} · ${r.orders.length ? `em rota: #${r.orders.map((o) => o.number).join(", #")}` : "disponível"}${late ? ` · sem sinal há ${r.seen} min` : ""}` });
   }
 
   return (
@@ -74,12 +74,12 @@ export function MapTab({ pizzeriaId, orders }: { pizzeriaId: string; orders: Sto
         )}
         <LiveMap points={points} height={480} />
         <p className="text-[11px] text-muted">
-          🛵 = entregador em rota, ao vivo. A posição aparece enquanto o entregador está com a página de entregas aberta no celular e some quando ele termina as entregas.
+          🛵 = entregador em turno ou em rota, ao vivo. A posição aparece enquanto ele está com a página de entregas aberta no celular e some quando ele encerra o turno.
         </p>
       </div>
-      <Panel title="Na rua agora">
+      <Panel title="Entregadores agora">
         {onRoute.length === 0 ? (
-          <Empty>Nenhum entregador em rota.</Empty>
+          <Empty>Nenhum entregador em turno ou em rota.</Empty>
         ) : (
           <ul className="space-y-3 text-sm">
             {onRoute.map(({ c, pos, orders: list, seen }) => (
@@ -90,7 +90,9 @@ export function MapTab({ pizzeriaId, orders }: { pizzeriaId: string; orders: Sto
                 <p className={`text-xs ${!pos || (seen != null && seen >= STALE_MIN) ? "text-warning" : "text-success"}`}>
                   {!pos ? "Sem localização (página do entregador fechada ou GPS bloqueado)" : seen != null && seen >= STALE_MIN ? `Sem sinal há ${seen} min` : "Ao vivo"}
                 </p>
-                <p className="mt-1 text-xs">{list.map((o) => `#${o.number} ${o.address?.neighborhood ?? ""}`).join(" · ")}</p>
+                <p className="mt-1 text-xs">
+                  {list.length ? `Em rota: ${list.map((o) => `#${o.number} ${o.address?.neighborhood ?? ""}`).join(" · ")}` : "Disponível, sem entrega agora"}
+                </p>
               </li>
             ))}
           </ul>

@@ -562,3 +562,32 @@ describe("mapa das entregas", () => {
     expect(await fails(user(OWNER_B), "select public.update_courier_location($1, 1, 1)", [pzA])).toMatch(/Sem permissão/);
   });
 });
+
+describe("entregador em serviço", () => {
+  const D4 = "00000000-0000-4000-8000-0000000000e4";
+  const loc = "select public.update_courier_location($1, -12.9, -38.4, 10) ok";
+  const me = () => one<{ on_duty: boolean; last_lat: number | null }>(user(OWNER_A), "select on_duty, last_lat from public.couriers where user_id = $1", [D4]);
+  beforeAll(async () => {
+    await db.query("insert into auth.users (id, email) values ($1, 'd4@x.com')", [D4]);
+    await one(user(OWNER_A), "select public.add_member_by_email($1, 'd4@x.com', 'driver', 'Quatro')", [pzA]);
+  });
+
+  it("em turno guarda a posição sem entrega; encerrando, apaga", async () => {
+    expect((await one<{ ok: boolean }>(user(D4), loc, [pzA])).ok).toBe(false);
+    await one(user(D4), "select public.set_courier_on_duty($1, true)", [pzA]);
+    expect((await one<{ ok: boolean }>(user(D4), loc, [pzA])).ok).toBe(true);
+    expect(await me()).toEqual({ on_duty: true, last_lat: -12.9 });
+    await one(user(D4), "select public.set_courier_on_duty($1, false)", [pzA]);
+    expect(await me()).toEqual({ on_duty: false, last_lat: null });
+  });
+
+  it("só o próprio entregador liga o turno; desativado sai do turno", async () => {
+    expect(await fails(user(KITCHEN_A), "select public.set_courier_on_duty($1, true)", [pzA])).toMatch(/Sem permissão/);
+    await one(user(D4), "select public.set_courier_on_duty($1, true)", [pzA]);
+    await one(user(D4), loc, [pzA]);
+    await one(user(OWNER_A), "update public.couriers set active = false where user_id = $1 returning id", [D4]);
+    expect(await me()).toEqual({ on_duty: false, last_lat: null });
+    expect(await fails(user(D4), "select public.set_courier_on_duty($1, true)", [pzA])).toMatch(/desativado/);
+    await one(user(OWNER_A), "update public.couriers set active = true where user_id = $1 returning id", [D4]);
+  });
+});

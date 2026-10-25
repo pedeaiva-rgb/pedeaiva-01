@@ -66,3 +66,36 @@ export function useWakeLock(active: boolean) {
   }, [active]);
   return active && on;
 }
+
+export type GeoPermission = "granted" | "prompt" | "denied" | "unknown";
+
+/** Se o navegador já liberou a localização para o site (e avisa quando muda). */
+export function useGeoPermission() {
+  const [state, setState] = useState<GeoPermission>("unknown");
+  useEffect(() => {
+    let status: PermissionStatus | null = null;
+    const update = () => status && setState(status.state as GeoPermission);
+    navigator.permissions
+      ?.query({ name: "geolocation" })
+      .then((s) => {
+        status = s;
+        update();
+        s.addEventListener("change", update);
+      })
+      .catch(() => setState("unknown"));
+    return () => status?.removeEventListener("change", update);
+  }, []);
+  return state;
+}
+
+/** Pede a localização na hora (abre a pergunta do navegador). */
+export function askLocation(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (!("geolocation" in navigator)) return resolve(false);
+    navigator.geolocation.getCurrentPosition(
+      () => resolve(true),
+      () => resolve(false),
+      { enableHighAccuracy: true, timeout: 20_000 },
+    );
+  });
+}

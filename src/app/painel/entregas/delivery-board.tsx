@@ -15,6 +15,7 @@ import { formatBrPhone, normalizeBrPhone } from "@/lib/phone";
 import { browserClient } from "@/lib/supabase/client";
 import type { Courier, CourierPay, Order, OrderItem, Role } from "@/lib/types";
 import { MapTab } from "./map-tab";
+import { LIVE_TRACKING } from "@/lib/features";
 
 type Row = Order & { order_items: Pick<OrderItem, "id" | "name" | "size_name" | "qty">[] };
 /** Entrega feita e ainda não acertada com o entregador. */
@@ -115,7 +116,7 @@ export function DeliveryBoard({ pizzeriaId, role }: { pizzeriaId: string; role: 
         subtitle={live ? "Ao vivo: os pedidos de entrega aparecem aqui sozinhos." : "Conectando… atualiza a cada 30 s."}
         actions={
           <div className="flex gap-1 rounded-full bg-sand p-1 text-sm font-bold">
-            {(MANAGE.includes(role) ? (["fila", "mapa", "entregadores", "acerto"] as const) : (["fila", "mapa", "entregadores"] as const)).map((k) => (
+            {(["fila", ...(LIVE_TRACKING ? (["mapa"] as const) : []), "entregadores", ...(MANAGE.includes(role) ? (["acerto"] as const) : [])] as const).map((k) => (
               <button key={k} onClick={() => setTab(k)} className={`rounded-full px-4 py-1.5 ${tab === k ? "bg-surface shadow-sm" : "text-muted"}`}>
                 {{ fila: "Fila de entregas", mapa: "Mapa ao vivo", entregadores: "Entregadores", acerto: "Acerto" }[k]}
               </button>
