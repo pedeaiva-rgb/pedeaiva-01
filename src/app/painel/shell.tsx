@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { Bike, ChefHat, ExternalLink, KeyRound, LayoutDashboard, LogOut, Menu, Monitor, Pizza, Receipt, Settings, Ticket, Users, X, Zap } from "lucide-react";
+import { Bike, ChefHat, ExternalLink, KeyRound, LayoutDashboard, LogOut, Menu, Monitor, Pizza, Receipt, Settings, Ticket, Users, Wallet, X, Zap } from "lucide-react";
 import { PavLogo } from "@/components/brand/logo";
 import { ROLE_LABEL } from "@/lib/order-labels";
 import type { Role } from "@/lib/types";
@@ -13,7 +13,7 @@ import { CounterGuard } from "./counter-guard";
 /** Funções que entram pelo balcão com PIN (cozinha tem o link dela; entregador usa o celular). */
 const COUNTER_ROLES: Role[] = ["owner", "manager", "cashier", "attendant"];
 
-type Area = "pedidos" | "cozinha" | "entregas" | "entregador" | "pdv" | "cardapio" | "configuracoes" | "cupons" | "equipe" | "automacoes";
+type Area = "pedidos" | "cozinha" | "entregas" | "entregador" | "pdv" | "caixa" | "cardapio" | "configuracoes" | "cupons" | "equipe" | "automacoes";
 const NAV: { href: string; label: string; icon: typeof Receipt; area?: Area }[] = [
   { href: "/painel", label: "Visão geral", icon: LayoutDashboard },
   { href: "/painel/pedidos", label: "Pedidos", icon: Receipt, area: "pedidos" },
@@ -21,6 +21,7 @@ const NAV: { href: string; label: string; icon: typeof Receipt; area?: Area }[] 
   { href: "/painel/entregas", label: "Entregas", icon: Bike, area: "entregas" },
   { href: "/painel/entregador", label: "Minhas entregas", icon: Bike, area: "entregador" },
   { href: "/painel/pdv", label: "PDV / Balcão", icon: Monitor, area: "pdv" },
+  { href: "/painel/caixa", label: "Caixa do dia", icon: Wallet, area: "caixa" },
   { href: "/painel/cardapio", label: "Cardápio", icon: Pizza, area: "cardapio" },
   { href: "/painel/cupons", label: "Cupons", icon: Ticket, area: "cupons" },
   { href: "/painel/equipe", label: "Equipe", icon: Users, area: "equipe" },

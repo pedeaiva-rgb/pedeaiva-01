@@ -730,3 +730,43 @@ describe("funções abertas", () => {
     expect(r.map((x) => x.proname).filter((n) => !ANON_OK.includes(n))).toEqual([]);
   });
 });
+
+describe("caixa do dia", () => {
+  const cur = (who: string) => one<{ c: { totals: Record<string, number>; can_see_expected: boolean } | null }>(user(who), "select public.cash_current($1) c", [pzA]).then((x) => x.c);
+
+  it("abre um caixa por vez; cozinha não mexe", async () => {
+    expect(await fails(user(KITCHEN_A), "select public.open_cash($1, 10000)", [pzA])).toMatch(/Sem permissão/);
+    await one(user(CASHIER_A), "select public.open_cash($1, 10000)", [pzA]);
+    expect(await fails(user(CASHIER_A), "select public.open_cash($1, 5000)", [pzA])).toMatch(/Já existe um caixa aberto/);
+  });
+
+  it("soma recebimentos por forma, sangria com PIN do gerente e esconde o esperado do caixa", async () => {
+    await one(user(OWNER_A), "select public.set_my_pin($1, '7390')", [pzA]);
+    const a = await createOrder(orderPayload({ channel: "telefone", customer_phone: "71988880001", payment_method: "dinheiro" }));
+    await one(user(CASHIER_A), "select public.register_payment($1, 'dinheiro')", [a.order_id]);
+    const b = await createOrder(orderPayload({ channel: "telefone", customer_phone: "71988880002", payment_method: "pix" }));
+    await one(user(CASHIER_A), "select public.register_payment($1, 'pix')", [b.order_id]);
+    await one(user(CASHIER_A), "select public.cash_movement($1, 'suprimento', 2000, 'troco extra')", [pzA]);
+    expect(await fails(user(CASHIER_A), "select public.cash_movement($1, 'sangria', 3000, 'pagar gás')", [pzA])).toMatch(/PIN do gerente/);
+    await one(user(CASHIER_A), "select public.request_cash_approval($1, '7390')", [pzA]);
+    await one(user(CASHIER_A), "select public.cash_movement($1, 'sangria', 3000, 'pagar gás')", [pzA]);
+
+    const forCashier = (await cur(CASHIER_A))!;
+    expect(forCashier.can_see_expected).toBe(false);
+    expect(forCashier.totals.esperado_gaveta).toBeUndefined();
+    expect(forCashier.totals).toMatchObject({ abertura: 10000, dinheiro_balcao: 5000, pix: 5000, suprimentos: 2000, sangrias: 3000 });
+    const forOwner = (await cur(OWNER_A))!;
+    expect(forOwner.totals.esperado_gaveta).toBe(10000 + 5000 + 2000 - 3000);
+  });
+
+  it("fecha contando a gaveta e guarda a diferença", async () => {
+    const r = await one<{ r: { esperado_gaveta: number; diferenca: number } }>(user(CASHIER_A), "select public.close_cash($1, 13500, 'faltou 5') r", [pzA]);
+    expect(r.r.esperado_gaveta).toBe(14000);
+    expect(r.r.diferenca).toBe(-500);
+    expect(await cur(CASHIER_A)).toBeNull();
+    const s = await one<{ status: string; difference_cents: number }>(user(OWNER_A), "select status, difference_cents from public.cash_sessions where pizzeria_id = $1 order by opened_at desc limit 1", [pzA]);
+    expect(s).toEqual({ status: "fechado", difference_cents: -500 });
+    expect(await rows(user(KITCHEN_A), "select id from public.cash_sessions")).toHaveLength(0);
+    expect(await fails(user(CASHIER_A), "select public.cash_movement($1, 'suprimento', 100, 'teste')", [pzA])).toMatch(/Abra o caixa/);
+  });
+});

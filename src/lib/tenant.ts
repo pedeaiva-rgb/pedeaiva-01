@@ -14,6 +14,7 @@ export const ACCESS = {
   entregas: ["owner", "manager", "cashier", "attendant"],
   entregador: ["driver"],
   pdv: ["owner", "manager", "cashier", "attendant"],
+  caixa: ["owner", "manager", "cashier"],
   cardapio: ["owner", "manager"],
   configuracoes: ["owner", "manager"],
   cupons: ["owner", "manager"],
