@@ -17,6 +17,7 @@ import { sellable, startingPrice } from "@/lib/pricing";
 import { idempotencyKey, useQuote } from "@/lib/use-quote";
 import type { Fulfillment, Menu, PaymentMethod, Product } from "@/lib/types";
 import { placePdvOrder, quotePdvOrder } from "./actions";
+import { CustomerLookup } from "./customer-lookup";
 
 type Channel = "balcao" | "telefone" | "whatsapp";
 const EMPTY = { name: "", phone: "", street: "", number: "", complement: "", neighborhood: "", reference: "", change: "", notes: "", coupon: "" };
@@ -180,6 +181,22 @@ export function PdvScreen({ menu, canReceive }: { menu: Menu; canReceive: boolea
           />
         </div>
         {!phoneOk && f.phone.replace(/\D/g, "").length >= 10 && <p className="text-xs font-semibold text-danger">{PHONE_ERROR}</p>}
+        <CustomerLookup
+          menu={menu}
+          phone={f.phone}
+          onUseData={(name, a) => {
+            setF((s) => ({
+              ...s,
+              name: name ?? s.name,
+              ...(a ? { street: a.street, number: a.number, complement: a.complement ?? "", neighborhood: a.neighborhood, reference: a.reference ?? "" } : {}),
+            }));
+            if (a) setMode("entrega");
+          }}
+          onRepeat={(items) => {
+            setCart((s) => [...s, ...items]);
+            toast.success("Itens do último pedido adicionados. Confira com o cliente.");
+          }}
+        />
         {mode === "entrega" && (
           <div className="grid grid-cols-[1fr_80px] gap-2">
             <input className="field !py-2" placeholder="Rua" value={f.street} onChange={set("street")} maxLength={120} />

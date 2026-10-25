@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
-import { Bell, BellOff, Bike, MessageCircle, Phone, Printer, Store, X } from "lucide-react";
+import { Bell, BellOff, Bike, KeyRound, MessageCircle, Phone, Printer, Store, X } from "lucide-react";
 import { toast } from "sonner";
 import { Receipt } from "@/components/receipt";
 import { DeliveryCode } from "@/components/delivery-code";
@@ -219,6 +219,22 @@ function OrderDrawer({ o, role, storeName, onClose, onChanged }: { o: Row; role:
     return !error;
   };
   const go = (to: OrderStatus, note?: string) => act(() => sb.rpc("transition_order", { _order: o.id, _to: to, _note: note ?? null }), `Pedido #${o.number}: ${STATUS[to].label}`);
+  // Caixa e atendente: cancelar e estornar pedem o PIN de um gerente ou do dono na hora.
+  const needsApproval = role === "cashier" || role === "attendant";
+  const [managerPin, setManagerPin] = useState("");
+  const approve = async (action: "cancelar" | "estornar") => {
+    if (!needsApproval) return true;
+    setBusy(true);
+    const { data, error } = await sb.rpc("request_approval", { _order: o.id, _action: action, _pin: managerPin });
+    setBusy(false);
+    setManagerPin("");
+    if (error) {
+      toast.error(dbError(error));
+      return false;
+    }
+    toast.message(`Autorizado por ${data as string}`);
+    return true;
+  };
   const wa = o.customer_phone ? `https://wa.me/55${o.customer_phone}` : null;
 
   return (
@@ -335,7 +351,7 @@ function OrderDrawer({ o, role, storeName, onClose, onChanged }: { o: Row; role:
             </div>
           )}
           {o.payment_status === "recebido" &&
-            MANAGER.includes(role) &&
+            (MANAGER.includes(role) || role === "cashier") &&
             (refundReason == null ? (
               <button className="text-xs font-bold text-muted hover:text-danger" onClick={() => setRefundReason("")}>
                 Estornar pagamento
@@ -343,14 +359,18 @@ function OrderDrawer({ o, role, storeName, onClose, onChanged }: { o: Row; role:
             ) : (
               <div className="space-y-2">
                 <input className="field !py-2" placeholder="Motivo do estorno (obrigatório)" value={refundReason} onChange={(e) => setRefundReason(e.target.value)} maxLength={300} />
+                {needsApproval && <ManagerPin value={managerPin} onChange={setManagerPin} />}
                 <div className="flex gap-2">
                   <button className="btn-ghost flex-1 !py-2" onClick={() => setRefundReason(null)}>
                     Voltar
                   </button>
                   <button
                     className="btn flex-1 !py-2"
-                    disabled={busy || refundReason.trim().length < 3}
-                    onClick={async () => (await act(() => sb.rpc("refund_payment", { _order: o.id, _reason: refundReason }), "Estorno registrado")) && setRefundReason(null)}
+                    disabled={busy || refundReason.trim().length < 3 || (needsApproval && managerPin.length !== 4)}
+                    onClick={async () => {
+                      if (!(await approve("estornar"))) return;
+                      if (await act(() => sb.rpc("refund_payment", { _order: o.id, _reason: refundReason }), "Estorno registrado")) setRefundReason(null);
+                    }}
                   >
                     Estornar
                   </button>
@@ -372,11 +392,19 @@ function OrderDrawer({ o, role, storeName, onClose, onChanged }: { o: Row; role:
         {cancelReason != null && (
           <div className="space-y-2 rounded-2xl border border-danger/40 p-4">
             <textarea className="field" rows={2} placeholder="Motivo do cancelamento (obrigatório)" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} maxLength={300} />
+            {needsApproval && <ManagerPin value={managerPin} onChange={setManagerPin} />}
             <div className="flex gap-2">
               <button className="btn-ghost flex-1 !py-2" onClick={() => setCancelReason(null)}>
                 Voltar
               </button>
-              <button className="btn flex-1 !py-2" disabled={busy || cancelReason.trim().length < 3} onClick={async () => (await go("cancelado", cancelReason)) && setCancelReason(null)}>
+              <button
+                className="btn flex-1 !py-2"
+                disabled={busy || cancelReason.trim().length < 3 || (needsApproval && managerPin.length !== 4)}
+                onClick={async () => {
+                  if (!(await approve("cancelar"))) return;
+                  if (await go("cancelado", cancelReason)) setCancelReason(null);
+                }}
+              >
                 Cancelar pedido
               </button>
             </div>
@@ -397,5 +425,26 @@ function OrderDrawer({ o, role, storeName, onClose, onChanged }: { o: Row; role:
         <Receipt order={o} items={o.order_items} storeName={storeName} />
       </div>
     </Drawer>
+  );
+}
+
+/** Campo do PIN do gerente/dono para autorizar a ação do caixa ou atendente. */
+function ManagerPin({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <label className="block">
+      <span className="mb-1 flex items-center gap-1 text-xs font-bold text-muted">
+        <KeyRound className="h-3.5 w-3.5" /> PIN do gerente ou do dono (autorização)
+      </span>
+      <input
+        className="field !py-2 text-center font-mono text-xl tracking-[0.5em]"
+        type="password"
+        inputMode="numeric"
+        autoComplete="off"
+        maxLength={4}
+        placeholder="••••"
+        value={value}
+        onChange={(e) => onChange(e.target.value.replace(/\D/g, "").slice(0, 4))}
+      />
+    </label>
   );
 }

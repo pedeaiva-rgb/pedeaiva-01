@@ -20,6 +20,8 @@ export type Member = {
   is_me: boolean;
   phone: string | null;
   email: string | null;
+  /** Já criou o PIN do balcão (null = não dá para saber ainda). */
+  has_pin: boolean | null;
 };
 export type JoinRequest = {
   id: string;
@@ -183,6 +185,23 @@ export function TeamManager({
                     <p className="truncate text-xs text-muted">
                       {[m.phone && `WhatsApp ${formatBrPhone(m.phone)}`, m.email, `desde ${dateBR(m.created_at)}`].filter(Boolean).join(" · ")}
                     </p>
+                    {m.has_pin != null && !["kitchen", "driver"].includes(m.role) && (
+                      <p className="flex items-center gap-2 text-xs">
+                        <span className={m.has_pin ? "font-semibold text-success" : "text-muted"}>{m.has_pin ? "PIN do balcão criado" : "Ainda sem PIN do balcão"}</span>
+                        {m.has_pin && !m.is_me && (
+                          <button
+                            className="font-bold text-muted hover:text-danger"
+                            disabled={busy}
+                            onClick={() =>
+                              confirm(`Zerar o PIN de ${m.display_name ?? "esta pessoa"}? Ela vai precisar criar outro em "Meu PIN".`) &&
+                              run(() => sb.rpc("clear_member_pin", { _pz: pizzeriaId, _user: m.user_id }), "PIN zerado")
+                            }
+                          >
+                            Zerar PIN
+                          </button>
+                        )}
+                      </p>
+                    )}
                   </div>
                   {m.is_me ? (
                     <span className="rounded-full bg-sand px-3 py-1 text-xs font-bold">{ROLE_LABEL[m.role]}</span>

@@ -9,7 +9,7 @@ export type Membership = { pizzeria: Pizzeria; role: Role };
 
 /** O que cada função vê no painel. O banco aplica as mesmas regras de verdade. */
 export const ACCESS = {
-  pedidos: ["owner", "manager", "cashier", "attendant", "kitchen"],
+  pedidos: ["owner", "manager", "cashier", "attendant"],
   cozinha: ["owner", "manager", "cashier", "kitchen"],
   entregas: ["owner", "manager", "cashier", "attendant"],
   entregador: ["driver"],

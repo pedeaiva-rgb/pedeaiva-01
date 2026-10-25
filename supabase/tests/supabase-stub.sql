@@ -35,3 +35,7 @@ returns bigint language sql as $$
 $$;
 grant usage on schema net to service_role;
 grant select on net.calls to service_role;
+
+-- Como no Supabase: toda função nova no schema public já nasce liberada para anon e authenticated.
+-- (Assim os testes pegam função que deveria ser fechada e esqueceu o "revoke ... from anon, authenticated".)
+alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;

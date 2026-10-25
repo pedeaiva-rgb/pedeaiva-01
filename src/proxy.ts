@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { COUNTER_COOKIE, readCounterCookie } from "@/lib/counter";
 import { SUPABASE_KEY, SUPABASE_URL, supabaseConfigured } from "@/lib/supabase/env";
 
 /** Renova a sessão do Supabase a cada navegação e manda para o login quem abre o painel sem estar logado. */
@@ -20,6 +21,13 @@ export async function proxy(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
   if (!data?.claims && request.nextUrl.pathname.startsWith("/painel")) {
     const url = request.nextUrl.clone();
+    // Computador do balcão: volta para a lista da equipe em vez do login com e-mail.
+    const counter = readCounterCookie(request.cookies.get(COUNTER_COOKIE)?.value);
+    if (counter) {
+      url.pathname = `/balcao/${counter.code}`;
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
     url.pathname = "/entrar";
     url.search = `?next=${encodeURIComponent(request.nextUrl.pathname)}`;
     return NextResponse.redirect(url);

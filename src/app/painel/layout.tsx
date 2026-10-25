@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SetupNotice } from "@/components/setup-notice";
+import { COUNTER_COOKIE, readCounterCookie } from "@/lib/counter";
 import { supabaseConfigured } from "@/lib/supabase/env";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { ACCESS, getMemberships, getTenant } from "@/lib/tenant";
@@ -30,6 +32,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
       pizzeria={{ id: tenant.pizzeria.id, name: tenant.pizzeria.name, slug: tenant.pizzeria.slug, accepting: tenant.pizzeria.accepting_orders }}
       stores={list.map((m) => ({ id: m.pizzeria.id, name: m.pizzeria.name }))}
       access={ACCESS}
+      counter={readCounterCookie((await cookies()).get(COUNTER_COOKIE)?.value)}
     >
       {children}
     </Shell>

@@ -229,14 +229,14 @@ describe("status e pagamento", () => {
   it("cancelar exige motivo", async () => {
     const o = await createOrder(orderPayload({ customer_phone: "71944440002" }));
     expect(await fails(user(CASHIER_A), "select public.transition_order($1, 'cancelado')", [o.order_id])).toMatch(/motivo/);
-    await one(user(CASHIER_A), "select public.transition_order($1, 'cancelado', 'Cliente desistiu')", [o.order_id]);
+    await one(user(OWNER_A), "select public.transition_order($1, 'cancelado', 'Cliente desistiu')", [o.order_id]);
     expect(await fails(user(CASHIER_A), "select public.register_payment($1, 'pix')", [o.order_id])).toMatch(/cancelado/);
   });
   it("um recebimento por pedido; estorno só pela gerência e com motivo", async () => {
     const o = await createOrder(orderPayload({ customer_phone: "71944440003" }));
     await one(user(CASHIER_A), "select public.register_payment($1, 'dinheiro')", [o.order_id]);
     expect(await fails(user(CASHIER_A), "select public.register_payment($1, 'pix')", [o.order_id])).toMatch(/já tem recebimento/);
-    expect(await fails(user(CASHIER_A), "select public.refund_payment($1, 'Erro no valor')", [o.order_id])).toMatch(/Somente/);
+    expect(await fails(user(CASHIER_A), "select public.refund_payment($1, 'Erro no valor')", [o.order_id])).toMatch(/PIN do gerente/);
     expect(await fails(user(OWNER_A), "select public.refund_payment($1, '')", [o.order_id])).toMatch(/motivo/);
     await one(user(OWNER_A), "select public.refund_payment($1, 'Erro no valor')", [o.order_id]);
     const p = await rows(user(OWNER_A), "select kind, method, amount_cents from public.payments where order_id = $1 order by created_at", [o.order_id]);
@@ -654,5 +654,79 @@ describe("cozinha: cancelados", () => {
     expect(c.status).toBe("cancelado");
     expect(c.cancel).toMatchObject({ note: "cliente desistiu", from: "confirmado" });
     expect(t.tickets.some((x) => x.id === nunca.order_id)).toBe(false);
+  });
+});
+
+describe("modo balcão e autorização do gerente", () => {
+  let dev = "";
+  const check = (user_id: string, pin: string) =>
+    one<{ r: { ok?: boolean; error?: string } }>(SERVICE, "select public.counter_check_pin($1, $2, $3) r", [dev, user_id, pin]).then((x) => x.r);
+
+  it("cada pessoa cria o próprio PIN; PIN óbvio é recusado", async () => {
+    expect(await fails(user(CASHIER_A), "select public.set_my_pin($1, '1234')", [pzA])).toMatch(/menos óbvio/);
+    expect(await fails(user(CASHIER_A), "select public.set_my_pin($1, '12')", [pzA])).toMatch(/4 números/);
+    await one(user(CASHIER_A), "select public.set_my_pin($1, '5821')", [pzA]);
+    await one(user(OWNER_A), "select public.set_my_pin($1, '7390')", [pzA]);
+    expect((await one<{ s: boolean }>(user(CASHIER_A), "select public.my_pin_status($1) s", [pzA])).s).toBe(true);
+    expect(await fails(user(OWNER_B), "select public.set_my_pin($1, '5821')", [pzA])).toMatch(/Sem permissão/);
+    expect(await fails(ANON, "select * from public.member_pins")).toMatch(/permission denied/);
+  });
+
+  it("balcão lista quem tem PIN (sem cozinha nem entregador) e confere o PIN", async () => {
+    const code = (await one<{ code: string }>(user(OWNER_A), "select * from public.counter_link($1)", [pzA])).code;
+    dev = (await one<{ r: { token: string } }>(ANON, "select public.counter_open($1) r", [code])).r.token;
+    await one(user(KITCHEN_A), "select public.set_my_pin($1, '6655')", [pzA]);
+    const staff = (await one<{ s: { staff: { user_id: string; role: string }[] } }>(ANON, "select public.counter_staff($1) s", [dev])).s.staff;
+    expect(staff.map((s) => s.user_id).sort()).toEqual([CASHIER_A, OWNER_A].sort());
+    expect(await fails(ANON, "select public.counter_check_pin($1, $2, '5821')", [dev, CASHIER_A])).toMatch(/permission denied/);
+    expect((await check(CASHIER_A, "0000")).error).toMatch(/PIN errado/);
+    expect((await check(CASHIER_A, "5821")).ok).toBe(true);
+    expect((await check(KITCHEN_A, "6655")).error).toMatch(/não pode entrar/);
+    for (let i = 0; i < 5; i++) await check(CASHIER_A, "0001");
+    expect((await check(CASHIER_A, "5821")).error).toMatch(/Muitas tentativas/);
+  });
+
+  it("caixa só cancela e estorna com o PIN do gerente; dono cancela direto", async () => {
+    const o = await createOrder(orderPayload({ channel: "telefone", customer_phone: "71977770001" }));
+    await one(user(CASHIER_A), "select public.transition_order($1, 'confirmado')", [o.order_id]);
+    expect(await fails(user(CASHIER_A), "select public.transition_order($1, 'cancelado', 'cliente desistiu')", [o.order_id])).toMatch(/PIN do gerente/);
+    expect(await fails(user(CASHIER_A), "select public.request_approval($1, 'cancelar', '5821')", [o.order_id])).toMatch(/PIN de gerente errado/);
+    expect((await one<{ n: string }>(user(CASHIER_A), "select public.request_approval($1, 'cancelar', '7390') n", [o.order_id])).n).toBeTruthy();
+    await one(user(CASHIER_A), "select public.transition_order($1, 'cancelado', 'cliente desistiu')", [o.order_id]);
+    const ev = await one<{ note: string }>(user(OWNER_A), "select note from public.order_events where order_id = $1 and to_status = 'cancelado'", [o.order_id]);
+    expect(ev.note).toMatch(/cliente desistiu · autorizado por/);
+
+    const p = await createOrder(orderPayload({ channel: "telefone", customer_phone: "71977770002" }));
+    await one(user(CASHIER_A), "select public.register_payment($1, 'pix')", [p.order_id]);
+    expect(await fails(user(CASHIER_A), "select public.refund_payment($1, 'pix duplicado')", [p.order_id])).toMatch(/PIN do gerente/);
+    await one(user(CASHIER_A), "select public.request_approval($1, 'estornar', '7390')", [p.order_id]);
+    await one(user(CASHIER_A), "select public.refund_payment($1, 'pix duplicado')", [p.order_id]);
+    // A autorização vale uma vez só.
+    const q = await createOrder(orderPayload({ channel: "telefone", customer_phone: "71977770003" }));
+    await one(user(OWNER_A), "select public.transition_order($1, 'cancelado', 'teste dono')", [q.order_id]);
+  });
+
+  it("dono zera o PIN de alguém", async () => {
+    expect((await one<{ n: number }>(user(OWNER_A), "select count(*)::int n from public.team_pins($1) where has_pin", [pzA])).n).toBeGreaterThanOrEqual(2);
+    await one(user(OWNER_A), "select public.clear_member_pin($1, $2)", [pzA, CASHIER_A]);
+    expect((await one<{ s: boolean }>(user(CASHIER_A), "select public.my_pin_status($1) s", [pzA])).s).toBe(false);
+    expect(await fails(user(CASHIER_A), "select * from public.team_pins($1)", [pzA])).toMatch(/Sem permissão/);
+  });
+});
+
+describe("funções abertas", () => {
+  // O que o visitante sem login pode chamar: loja, acompanhamento, convite e as telas por link (cozinha e balcão).
+  const ANON_OK = [
+    "counter_open", "counter_staff", "get_order_tracking", "has_role", "invite_info", "is_member", "kitchen_move", "kitchen_open",
+    "kitchen_tickets", "normalize_br_phone", "store_coupons", "valid_cpf",
+    // Lê o caminho da foto no armazenamento (usada pelas regras de acesso das fotos dos produtos).
+    "storage_pizzeria_id",
+  ];
+  it("visitante só executa as funções públicas", async () => {
+    const r = await rows<{ proname: string }>(
+      SERVICE,
+      "select distinct p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and has_function_privilege('anon', p.oid, 'EXECUTE') order by 1",
+    );
+    expect(r.map((x) => x.proname).filter((n) => !ANON_OK.includes(n))).toEqual([]);
   });
 });

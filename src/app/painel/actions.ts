@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { COUNTER_COOKIE, readCounterCookie } from "@/lib/counter";
 import { getMemberships, TENANT_COOKIE } from "@/lib/tenant";
 
 export async function switchPizzeria(id: string) {
@@ -16,7 +17,17 @@ export async function switchPizzeria(id: string) {
 export async function signOut() {
   const sb = await createClient();
   await sb.auth.signOut();
+  (await cookies()).delete(COUNTER_COOKIE);
   redirect("/entrar");
+}
+
+/** Computador do balcão: sai da pessoa atual e volta para a lista da equipe. */
+export async function switchCounterUser() {
+  const store = await cookies();
+  const counter = readCounterCookie(store.get(COUNTER_COOKIE)?.value);
+  const sb = await createClient();
+  await sb.auth.signOut();
+  redirect(counter ? `/balcao/${counter.code}` : "/entrar");
 }
 
 const newStore = z.object({

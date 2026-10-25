@@ -14,6 +14,8 @@ type Row = { id: string; number: number; status: OrderStatus; total_cents: numbe
 export default async function Overview() {
   const t = (await getTenant())!;
   if (t.role === "driver") redirect("/painel/entregador");
+  if (t.role === "kitchen") redirect("/painel/cozinha");
+  if (t.role === "attendant") redirect("/painel/pedidos");
   const pz = t.pizzeria;
   const sb = await createClient();
   const since = startOfTodaySP().toISOString();

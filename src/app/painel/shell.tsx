@@ -3,11 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { Bike, ChefHat, ExternalLink, LayoutDashboard, LogOut, Menu, Monitor, Pizza, Receipt, Settings, Ticket, Users, X, Zap } from "lucide-react";
+import { Bike, ChefHat, ExternalLink, KeyRound, LayoutDashboard, LogOut, Menu, Monitor, Pizza, Receipt, Settings, Ticket, Users, X, Zap } from "lucide-react";
 import { PavLogo } from "@/components/brand/logo";
 import { ROLE_LABEL } from "@/lib/order-labels";
 import type { Role } from "@/lib/types";
-import { signOut, switchPizzeria } from "./actions";
+import { signOut, switchCounterUser, switchPizzeria } from "./actions";
+import { CounterGuard } from "./counter-guard";
+
+/** Funções que entram pelo balcão com PIN (cozinha tem o link dela; entregador usa o celular). */
+const COUNTER_ROLES: Role[] = ["owner", "manager", "cashier", "attendant"];
 
 type Area = "pedidos" | "cozinha" | "entregas" | "entregador" | "pdv" | "cardapio" | "configuracoes" | "cupons" | "equipe" | "automacoes";
 const NAV: { href: string; label: string; icon: typeof Receipt; area?: Area }[] = [
@@ -30,6 +34,7 @@ export function Shell({
   pizzeria,
   stores,
   access,
+  counter,
   children,
 }: {
   email: string | null;
@@ -37,13 +42,17 @@ export function Shell({
   pizzeria: { id: string; name: string; slug: string; accepting: boolean };
   stores: { id: string; name: string }[];
   access: Record<Area, readonly Role[]>;
+  /** Entrou pelo computador do balcão (com PIN): mostra "Trocar de pessoa" e sai sozinho sem uso. */
+  counter?: { code: string; idle: number } | null;
   children: ReactNode;
 }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
-  // O entregador vê só as entregas dele: nada da operação interna da loja.
-  const driver = role === "driver";
-  const items = NAV.filter((n) => (n.area ? access[n.area].includes(role) : !driver));
+  // Entregador, cozinha e atendente vão direto para a tela de trabalho: sem a Visão geral (com valores da loja).
+  const noOverview = role === "driver" || role === "kitchen" || role === "attendant";
+  // "Ver minha loja" é para quem atende o cliente ou cuida do cardápio.
+  const driver = role === "driver" || role === "kitchen";
+  const items = NAV.filter((n) => (n.area ? access[n.area].includes(role) : !noOverview));
 
   return (
     <div className="min-h-dvh md:flex">
@@ -96,11 +105,24 @@ export function Shell({
         <div className="border-t border-graphite pt-3 text-xs text-cream/60">
           <p className="truncate">{email}</p>
           <p>{ROLE_LABEL[role]}</p>
-          <form action={signOut}>
-            <button className="mt-2 flex items-center gap-2 font-bold text-cream hover:text-dende">
-              <LogOut className="h-4 w-4" /> Sair
-            </button>
-          </form>
+          {COUNTER_ROLES.includes(role) && (
+            <Link href="/painel/meu-pin" onClick={() => setOpen(false)} className="mt-2 flex items-center gap-2 font-bold text-cream hover:text-dende">
+              <KeyRound className="h-4 w-4" /> Meu PIN
+            </Link>
+          )}
+          {counter ? (
+            <form action={switchCounterUser}>
+              <button className="mt-2 flex items-center gap-2 font-bold text-dende hover:text-cream">
+                <Users className="h-4 w-4" /> Trocar de pessoa
+              </button>
+            </form>
+          ) : (
+            <form action={signOut}>
+              <button className="mt-2 flex items-center gap-2 font-bold text-cream hover:text-dende">
+                <LogOut className="h-4 w-4" /> Sair
+              </button>
+            </form>
+          )}
         </div>
       </aside>
       <div className="min-w-0 flex-1">
@@ -110,6 +132,7 @@ export function Shell({
           </button>
           <p className="truncate font-brand font-extrabold">{pizzeria.name}</p>
         </header>
+        {counter && <CounterGuard idleMinutes={counter.idle} name={email} />}
         {!pizzeria.accepting && (
           <p className="bg-dende-soft px-4 py-2 text-center text-xs font-bold text-warning">A loja online está pausada: clientes não conseguem pedir pelo site.</p>
         )}
