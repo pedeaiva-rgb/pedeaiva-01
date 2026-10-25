@@ -29,5 +29,5 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Só páginas: arquivos estáticos e imagens não precisam de sessão.
-  matcher: ["/((?!_next/static|_next/image|brand/|icon.svg|.*\\.(?:svg|png|jpg|jpeg|webp|ico)$).*)"],
+  matcher: ["/((?!_next/static|_next/image|brand/|icon.svg|sw.js|.*\\.(?:svg|png|jpg|jpeg|webp|ico)$).*)"],
 };

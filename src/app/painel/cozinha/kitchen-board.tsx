@@ -10,23 +10,28 @@ import { browserClient } from "@/lib/supabase/client";
 import type { Order, OrderItem, OrderStatus } from "@/lib/types";
 
 /** A cozinha só precisa do que vai no forno: número, tipo, itens e observações. Nada de telefone ou endereço na tela. */
-type Ticket = Pick<Order, "id" | "number" | "status" | "fulfillment" | "notes" | "created_at" | "updated_at"> & {
+export type Ticket = Pick<Order, "id" | "number" | "status" | "fulfillment" | "notes" | "created_at" | "updated_at"> & {
   order_items: Pick<OrderItem, "id" | "name" | "size_name" | "flavors" | "extras" | "note" | "qty">[];
+};
+
+/**
+ * De onde vêm os pedidos: do painel (login da equipe, ao vivo) ou do link da cozinha (aparelho sem login).
+ * `subscribe` avisa de mudanças na hora; sem ele, a tela consulta a cada `pollMs`.
+ */
+export type KitchenSource = {
+  key: string;
+  load: () => Promise<{ tickets: Ticket[]; waiting: number } | null>;
+  move: (id: string, to: OrderStatus) => Promise<string | null>;
+  subscribe?: (onChange: () => void, onLive: (live: boolean) => void) => () => void;
+  pollMs: number;
 };
 
 const fraction = (f: number) => (f === 0.5 ? "½" : Math.abs(f - 1 / 3) < 0.01 ? "⅓" : f === 0.25 ? "¼" : "");
 
-export function KitchenBoard({ pizzeriaId, prepMinutes }: { pizzeriaId: string; prepMinutes: number }) {
+/** Cozinha pelo painel: pedidos da loja com a sessão da pessoa e aviso na hora pelo Supabase. */
+export function PanelKitchen({ pizzeriaId, prepMinutes }: { pizzeriaId: string; prepMinutes: number }) {
   const sb = browserClient();
-  const [tickets, setTickets] = useState<Ticket[] | null>(null);
-  const [waiting, setWaiting] = useState(0);
-  const [live, setLive] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
-  const [sound, setSound] = useState(false);
-  const audio = useRef<AudioContext | null>(null);
-  const known = useRef<Set<string>>(new Set());
-
-  const fetchTickets = useCallback(async () => {
+  const load = useCallback(async () => {
     const since = new Date(Date.now() - 24 * 3600_000).toISOString();
     const [q, n] = await Promise.all([
       sb
@@ -41,6 +46,37 @@ export function KitchenBoard({ pizzeriaId, prepMinutes }: { pizzeriaId: string; 
     if (q.error) return null;
     return { tickets: q.data as Ticket[], waiting: n.count ?? 0 };
   }, [sb, pizzeriaId]);
+  const move = useCallback(
+    async (id: string, to: OrderStatus) => {
+      const { error } = await sb.rpc("transition_order", { _order: id, _to: to, _note: null });
+      return error ? dbError(error) : null;
+    },
+    [sb],
+  );
+  const subscribe = useCallback(
+    (onChange: () => void, onLive: (live: boolean) => void) => {
+      const ch = sb
+        .channel(`cozinha-${pizzeriaId}`)
+        .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `pizzeria_id=eq.${pizzeriaId}` }, onChange)
+        .subscribe((s) => onLive(s === "SUBSCRIBED"));
+      return () => void sb.removeChannel(ch);
+    },
+    [sb, pizzeriaId],
+  );
+  const [source] = useState<KitchenSource>(() => ({ key: pizzeriaId, load, move, subscribe, pollMs: 30_000 }));
+  return <KitchenBoard source={source} prepMinutes={prepMinutes} />;
+}
+
+export function KitchenBoard({ source, prepMinutes, title = "Cozinha", actions }: { source: KitchenSource; prepMinutes: number; title?: string; actions?: React.ReactNode }) {
+  const [tickets, setTickets] = useState<Ticket[] | null>(null);
+  const [waiting, setWaiting] = useState(0);
+  const [live, setLive] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const [sound, setSound] = useState(false);
+  const audio = useRef<AudioContext | null>(null);
+  const known = useRef<Set<string>>(new Set());
+
+  const fetchTickets = source.load;
 
   const apply = useCallback((r: { tickets: Ticket[]; waiting: number } | null) => {
     if (!r) return;
@@ -77,24 +113,22 @@ export function KitchenBoard({ pizzeriaId, prepMinutes }: { pizzeriaId: string; 
   }, [fetchTickets, apply]);
 
   useEffect(() => {
-    const ch = sb
-      .channel(`cozinha-${pizzeriaId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `pizzeria_id=eq.${pizzeriaId}` }, () => void reload())
-      .subscribe((s) => setLive(s === "SUBSCRIBED"));
-    const poll = setInterval(() => void reload(), 30_000);
+    const stop = source.subscribe?.(() => void reload(), setLive);
+    const poll = setInterval(() => void reload(), source.pollMs);
     const tick = setInterval(() => setNow(Date.now()), 20_000);
     return () => {
-      void sb.removeChannel(ch);
+      stop?.();
       clearInterval(poll);
       clearInterval(tick);
     };
-  }, [sb, pizzeriaId]);
+  }, [source]);
 
   const move = async (t: Ticket, to: OrderStatus) => {
-    const { error } = await sb.rpc("transition_order", { _order: t.id, _to: to, _note: null });
-    if (error) toast.error(dbError(error));
+    const error = await source.move(t.id, to);
+    if (error) toast.error(error);
     else apply(await fetchTickets());
   };
+  const polled = !source.subscribe;
 
   const toggleSound = () => {
     if (!sound) {
@@ -116,10 +150,10 @@ export function KitchenBoard({ pizzeriaId, prepMinutes }: { pizzeriaId: string; 
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="flex items-center gap-2 text-2xl font-extrabold">
-          <ChefHat className="h-7 w-7 text-tomato" /> Cozinha
+          <ChefHat className="h-7 w-7 text-tomato" /> {title}
         </h1>
-        <span className={`rounded-full px-3 py-1 text-xs font-bold ${live ? "bg-success-soft text-success" : "bg-dende-soft text-warning"}`}>
-          {live ? "● Ao vivo" : "Conectando… atualiza a cada 30 s"}
+        <span className={`rounded-full px-3 py-1 text-xs font-bold ${live || (polled && tickets) ? "bg-success-soft text-success" : "bg-dende-soft text-warning"}`}>
+          {live || (polled && tickets) ? "● Ao vivo" : `Conectando… atualiza a cada ${Math.round(source.pollMs / 1000)} s`}
         </span>
         <span className="text-xs text-muted">Meta de preparo: {prepMinutes} min</span>
         {waiting > 0 && <span className="rounded-full bg-info-soft px-3 py-1 text-xs font-bold text-info">{waiting} aguardando confirmação do caixa</span>}
@@ -130,6 +164,7 @@ export function KitchenBoard({ pizzeriaId, prepMinutes }: { pizzeriaId: string; 
           <button className="btn-ghost !py-2 text-sm" onClick={() => document.documentElement.requestFullscreen?.()}>
             <Maximize2 className="h-4 w-4" /> Tela cheia
           </button>
+          {actions}
         </div>
       </div>
 

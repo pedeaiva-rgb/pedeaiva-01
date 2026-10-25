@@ -591,3 +591,51 @@ describe("entregador em serviço", () => {
     await one(user(OWNER_A), "update public.couriers set active = true where user_id = $1 returning id", [D4]);
   });
 });
+
+describe("tela da cozinha por link", () => {
+  let code = "";
+  const open = (pin: string | null = null) => one<{ r: { token?: string; needs_pin?: boolean; error?: string } }>(ANON, "select public.kitchen_open($1, $2) r", [code, pin]).then((x) => x.r);
+
+  it("só dono e gerente veem e trocam o link", async () => {
+    code = (await one<{ code: string }>(user(OWNER_A), "select * from public.kitchen_link($1)", [pzA])).code;
+    expect(code).toMatch(/^[0-9a-f]{32}$/);
+    expect(await fails(user(KITCHEN_A), "select * from public.kitchen_link($1)", [pzA])).toMatch(/Sem permissão/);
+    expect(await fails(ANON, "select * from public.kitchen_links")).toMatch(/permission denied/);
+  });
+
+  it("sem PIN o aparelho entra direto e só vê o que vai no forno", async () => {
+    const r = await open();
+    expect(r.token).toMatch(/^[0-9a-f]{64}$/);
+    const o = await createOrder(orderPayload({ channel: "telefone", customer_phone: "71955550001", customer_name: "Cliente Secreto" }));
+    await one(user(OWNER_A), "select public.transition_order($1, 'confirmado')", [o.order_id]);
+    const t = (await one<{ t: { tickets: { id: string; status: string }[] } }>(ANON, "select public.kitchen_tickets($1) t", [r.token])).t;
+    expect(t.tickets.map((x) => x.id)).toContain(o.order_id);
+    expect(JSON.stringify(t)).not.toMatch(/Cliente Secreto|71955550001|total/);
+    await one(ANON, "select public.kitchen_move($1, $2, 'preparo')", [r.token, o.order_id]);
+    expect(await fails(ANON, "select public.kitchen_move($1, $2, 'cancelado')", [r.token, o.order_id])).toMatch(/só marca preparo e pronto/);
+    expect(await fails(ANON, "select public.kitchen_move('falso', $1, 'pronto')", [o.order_id])).toMatch(/desconectado/);
+    await one(ANON, "select public.kitchen_move($1, $2, 'pronto')", [r.token, o.order_id]);
+    expect((await one<{ s: string }>(user(OWNER_A), "select status s from public.orders where id = $1", [o.order_id])).s).toBe("pronto");
+  });
+
+  it("com PIN: pede, confere e trava depois de 5 erros", async () => {
+    expect(await fails(user(OWNER_A), "select public.set_kitchen_pin($1, '12a4')", [pzA])).toMatch(/4 números/);
+    await one(user(OWNER_A), "select public.set_kitchen_pin($1, '4321')", [pzA]);
+    expect((await open()).needs_pin).toBe(true);
+    expect((await open("1111")).error).toMatch(/PIN errado/);
+    expect((await open("4321")).token).toBeTruthy();
+    for (let i = 0; i < 5; i++) await open("0000");
+    expect((await open("4321")).error).toMatch(/Muitas tentativas/);
+    await one(user(OWNER_A), "select public.set_kitchen_pin($1, null)", [pzA]);
+    expect((await open()).token).toBeTruthy();
+  });
+
+  it("trocar o link derruba os aparelhos e o link antigo", async () => {
+    const r = await open();
+    const novo = (await one<{ c: string }>(user(OWNER_A), "select public.reset_kitchen_link($1) c", [pzA])).c;
+    expect((await open()).error).toMatch(/não vale mais/);
+    expect((await one<{ t: { error?: string } }>(ANON, "select public.kitchen_tickets($1) t", [r.token])).t.error).toBe("expirado");
+    code = novo;
+    expect((await open()).token).toBeTruthy();
+  });
+});

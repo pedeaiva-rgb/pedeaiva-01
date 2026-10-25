@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
-import { Banknote, Bell, BellOff, CheckCircle2, Hand, MapPin, MessageCircle, Navigation, Phone, Route, Send, Undo2, Wallet } from "lucide-react";
+import { Banknote, Bell, BellOff, BellRing, CheckCircle2, Hand, MapPin, MessageCircle, Navigation, Phone, Route, Send, Undo2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { Empty, Panel, Spinner } from "@/components/ui";
 import { beep, minutesSince, startOfTodaySP, timeSP } from "@/lib/beep";
@@ -14,6 +14,7 @@ import { formatBrPhone } from "@/lib/phone";
 import { browserClient } from "@/lib/supabase/client";
 import type { Courier, Order, OrderItem } from "@/lib/types";
 import { LIVE_TRACKING } from "@/lib/features";
+import { useNotifications } from "@/lib/use-notifications";
 import { LocationPanel } from "./location-panel";
 import { askLocation, useCourierGps, useGeoPermission, useWakeLock } from "./use-courier-gps";
 
@@ -72,6 +73,7 @@ export function DriverApp({
   const [sound, setSound] = useState(false);
   const audio = useRef<AudioContext | null>(null);
   const known = useRef<Set<string> | null>(null);
+  const { permission: notifyPermission, request, notify } = useNotifications("/painel/entregador");
 
   const fetchOrders = useCallback(async () => {
     const since = new Date(Date.now() - 2 * 864e5).toISOString();
@@ -101,6 +103,15 @@ export function DriverApp({
     });
     if (sound && audio.current) beep(audio.current);
     navigator.vibrate?.([200, 100, 200]);
+    // Fora da tela (outra aba, Waze na frente): notificação na barra do celular.
+    if (document.visibilityState !== "visible") {
+      const list = mine.length ? mine : fresh;
+      void notify(
+        mine.length ? "A loja te passou um pedido" : "Pedido pronto para sair",
+        list.map((o) => `#${o.number} · ${o.address?.neighborhood ?? o.customer_name}`).join("\n"),
+        `pedido-${list.map((o) => o.id).join("-")}`,
+      );
+    }
   });
   const reload = useEffectEvent(async () => {
     const r = await fetchOrders();
@@ -213,6 +224,28 @@ export function DriverApp({
           {sound ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />} {sound ? "Som ligado" : "Ligar som"}
         </button>
       </div>
+
+      {notifyPermission === "default" && (
+        <div className="card mb-4 flex items-center gap-3 border-2 border-dende p-3 text-xs">
+          <BellRing className="h-5 w-5 shrink-0 text-tomato" />
+          <span className="flex-1">Ative as notificações para ser avisado de pedido novo mesmo com o Waze ou outra tela aberta.</span>
+          <button
+            className="btn !px-3 !py-2 text-xs"
+            onClick={async () => {
+              const p = await request();
+              if (p === "granted") void notify("Notificações ligadas", "Você será avisado quando tiver pedido para entregar.", "teste");
+              else if (p === "denied") toast.error("Notificações bloqueadas. Dá para liberar no cadeado ao lado do endereço do site.");
+            }}
+          >
+            Ativar
+          </button>
+        </div>
+      )}
+      {notifyPermission === "denied" && (
+        <p className="mb-4 rounded-xl bg-dende-soft px-3 py-2 text-xs font-semibold text-warning">
+          Notificações bloqueadas. Para receber avisos de pedido, toque no cadeado ao lado do endereço do site → Permissões → Notificações → Permitir.
+        </p>
+      )}
 
       {LIVE_TRACKING && (
       <div className="mb-4">
