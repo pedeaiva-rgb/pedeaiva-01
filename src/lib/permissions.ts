@@ -29,7 +29,7 @@ export const PERM_LABEL: Record<keyof ManagerPerms, { title: string; hint: strin
   configuracoes: { title: "Configurações da loja", hint: "Horário, taxas e bairros de entrega, links da cozinha e do balcão" },
   automacoes: { title: "WhatsApp e automações", hint: "Endereço do n8n e avisos aos clientes" },
   estornar: { title: "Estornar pagamento", hint: "Estornar e autorizar estorno do caixa" },
-  faturamento: { title: "Ver o faturamento", hint: "Valores vendidos e recebidos na Visão geral" },
+  faturamento: { title: "Ver o faturamento", hint: "Valores vendidos e recebidos na Visão geral e os Relatórios" },
   equipe: { title: "Cuidar da equipe", hint: "Aprovar acessos e mudar função de caixa, atendente, cozinha e entregador" },
 };
 
@@ -38,8 +38,12 @@ const GATED = ["cardapio", "cupons", "configuracoes", "automacoes", "equipe"] as
 type Gated = (typeof GATED)[number];
 const isGated = (a: string): a is Gated => (GATED as readonly string[]).includes(a);
 
-/** A função tem a área e, se for gerente, o dono liberou. */
+/** A função tem a área e, se for gerente, o dono liberou. Relatórios dependem de "ver o faturamento". */
 export function areaAllowed(role: Role, perms: ManagerPerms, area: string, access: Record<string, readonly Role[]>) {
   if (!(access[area] ?? []).includes(role)) return false;
-  return role !== "manager" || !isGated(area) || perms[area];
+  if (role !== "manager") return true;
+  if (area === "relatorios") return perms.faturamento;
+  // Pagamento online ficava em Configurações: o gerente vê se o dono liberou as configurações (conectar a conta é só do dono).
+  if (area === "pagamentos") return perms.configuracoes;
+  return !isGated(area) || perms[area];
 }

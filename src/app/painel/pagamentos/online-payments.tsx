@@ -39,7 +39,7 @@ export function OnlinePayments({ info }: { info: OnlinePaymentsInfo }) {
     if (!n) return;
     if (n[1] === "success") toast.success(n[0]);
     else toast.error(n[0]);
-    router.replace("/painel/configuracoes");
+    router.replace("/painel/pagamentos");
   }, [info.notice, router]);
 
   const run = async (fn: () => Promise<{ ok: boolean; error?: string }>, ok: string) => {
@@ -53,7 +53,7 @@ export function OnlinePayments({ info }: { info: OnlinePaymentsInfo }) {
 
   if (info.missing) {
     return (
-      <Panel title="Pagamento online (Pix pelo site)" className="mt-4">
+      <Panel title="Pix pelo site">
         <p className="text-sm">
           Falta rodar no Supabase o SQL <code className="rounded bg-sand px-1">20261026010000_pagamentos_online.sql</code>.
         </p>
@@ -63,7 +63,7 @@ export function OnlinePayments({ info }: { info: OnlinePaymentsInfo }) {
 
   const acc = info.account?.status === "ativa" ? info.account : null;
   return (
-    <Panel title="Pagamento online (Pix pelo site)" className="mt-4">
+    <Panel title="Pix pelo site">
       <div className="space-y-4 text-sm">
         <p className="text-muted">
           O cliente paga o Pix na hora de fazer o pedido, e o pedido só chega para a loja depois de pago: acaba o pedido falso e o calote. O dinheiro cai direto na

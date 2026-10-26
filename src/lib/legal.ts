@@ -6,7 +6,7 @@ export const PLATFORM = {
   name: "Pede aí, vá",
   legalName: "",
   cnpj: "",
-  contactEmail: "",
+  contactEmail: "pedeaiva@gmail.com",
   updatedAt: "26 de outubro de 2026",
 };
 

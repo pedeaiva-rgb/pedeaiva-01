@@ -17,6 +17,8 @@ export const ACCESS = {
   mesas: ["owner", "manager", "cashier", "attendant", "waiter"],
   pdv: ["owner", "manager", "cashier", "attendant"],
   caixa: ["owner", "manager", "cashier"],
+  relatorios: ["owner", "manager"],
+  pagamentos: ["owner", "manager"],
   cardapio: ["owner", "manager"],
   configuracoes: ["owner", "manager"],
   cupons: ["owner", "manager"],

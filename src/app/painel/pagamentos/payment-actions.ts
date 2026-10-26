@@ -26,7 +26,7 @@ export async function setOnlinePix(enabled: boolean): Promise<R> {
   }
   const { error } = await adminClient().from("pizzerias").update({ online_pix: enabled }).eq("id", o.pz);
   if (error) return { ok: false, error: "Não foi possível salvar." };
-  revalidatePath("/painel/configuracoes");
+  revalidatePath("/painel/pagamentos");
   return { ok: true };
 }
 
@@ -39,7 +39,7 @@ export async function disconnectPayments(): Promise<R> {
   await admin.from("payment_secrets").delete().eq("pizzeria_id", o.pz);
   const { error } = await admin.from("payment_accounts").update({ status: "desconectada", updated_at: new Date().toISOString() }).eq("pizzeria_id", o.pz);
   if (error) return { ok: false, error: "Não foi possível desconectar." };
-  revalidatePath("/painel/configuracoes");
+  revalidatePath("/painel/pagamentos");
   return { ok: true };
 }
 
@@ -58,6 +58,6 @@ export async function connectSimulator(): Promise<R> {
     updated_at: new Date().toISOString(),
   });
   if (error) return { ok: false, error: "Não foi possível conectar o simulador." };
-  revalidatePath("/painel/configuracoes");
+  revalidatePath("/painel/pagamentos");
   return { ok: true };
 }

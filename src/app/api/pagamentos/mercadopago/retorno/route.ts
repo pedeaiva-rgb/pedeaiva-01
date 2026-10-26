@@ -5,10 +5,10 @@ import { adminClient } from "@/lib/supabase/admin";
 import { getUser } from "@/lib/supabase/server";
 import { hasRole } from "@/lib/tenant";
 
-/** Volta da autorização do Mercado Pago: guarda as credenciais (cifradas) e ativa a conta da loja. */
+/** Volta da autorização do Mercado Pago: guarda as credenciais (cifradas), ativa a conta da loja e volta para Financeiro → Pagamento online. */
 export async function GET(req: NextRequest) {
   const url = req.nextUrl;
-  const back = new URL("/painel/configuracoes", url.origin);
+  const back = new URL("/painel/pagamentos", url.origin);
   const fail = (why: string) => {
     back.searchParams.set("pagamento", why);
     return NextResponse.redirect(back);

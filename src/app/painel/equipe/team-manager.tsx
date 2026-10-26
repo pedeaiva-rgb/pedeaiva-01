@@ -52,6 +52,7 @@ const PERMS: [string, Role[]][] = [
   ["Mesas: abrir, lançar rodadas e servir", ["owner", "manager", "cashier", "attendant", "waiter"]],
   ["Receber pagamento e fechar a conta da mesa", ["owner", "manager", "cashier"]],
   ["Estornar pagamento", ["owner", "manager"]],
+  ["Relatórios e faturamento", ["owner", "manager"]],
   ["Cardápio, cupons e configurações", ["owner", "manager"]],
   ["Equipe", ["owner"]],
 ];

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { Bike, ChefHat, ExternalLink, KeyRound, LayoutDashboard, LogOut, Menu, Monitor, BookOpen, Receipt, Settings, Ticket, Users, UtensilsCrossed, Wallet, X, Zap } from "lucide-react";
+import { Bike, ChartColumn, ChefHat, CreditCard, ExternalLink, KeyRound, LayoutDashboard, LogOut, Menu, Monitor, BookOpen, Receipt, Settings, Ticket, Users, UtensilsCrossed, Wallet, X, Zap } from "lucide-react";
 import { PavLogo } from "@/components/brand/logo";
 import { ROLE_LABEL } from "@/lib/order-labels";
 import { areaAllowed, type ManagerPerms } from "@/lib/permissions";
@@ -14,7 +14,7 @@ import { CounterGuard } from "./counter-guard";
 /** Funções que entram pelo balcão com PIN (cozinha tem o link dela; entregador usa o celular). */
 const COUNTER_ROLES: Role[] = ["owner", "manager", "cashier", "attendant", "waiter"];
 
-type Area = "pedidos" | "cozinha" | "entregas" | "entregador" | "mesas" | "pdv" | "caixa" | "cardapio" | "configuracoes" | "cupons" | "equipe" | "automacoes";
+type Area = "pedidos" | "cozinha" | "entregas" | "entregador" | "mesas" | "pdv" | "caixa" | "relatorios" | "pagamentos" | "cardapio" | "configuracoes" | "cupons" | "equipe" | "automacoes";
 type NavItem = { href: string; label: string; icon: typeof Receipt; area?: Area };
 /** Menu em grupos (sem título: o topo). Cada pessoa vê só os itens da função dela; grupo vazio some. */
 const NAV: { title: string | null; items: NavItem[] }[] = [
@@ -35,7 +35,14 @@ const NAV: { title: string | null; items: NavItem[] }[] = [
       { href: "/painel/entregador", label: "Minhas entregas", icon: Bike, area: "entregador" },
     ],
   },
-  { title: "Financeiro", items: [{ href: "/painel/caixa", label: "Caixa do dia", icon: Wallet, area: "caixa" }] },
+  {
+    title: "Financeiro",
+    items: [
+      { href: "/painel/caixa", label: "Caixa do dia", icon: Wallet, area: "caixa" },
+      { href: "/painel/relatorios", label: "Relatórios", icon: ChartColumn, area: "relatorios" },
+      { href: "/painel/pagamentos", label: "Pagamento online", icon: CreditCard, area: "pagamentos" },
+    ],
+  },
   {
     title: "Loja online",
     items: [

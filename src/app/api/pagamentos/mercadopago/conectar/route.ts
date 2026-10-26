@@ -6,9 +6,9 @@ import { getTenant } from "@/lib/tenant";
 
 /** "Conectar Mercado Pago": manda o dono para autorizar a plataforma na conta dele. */
 export async function GET(req: NextRequest) {
-  const back = new URL("/painel/configuracoes", req.nextUrl.origin);
+  const back = new URL("/painel/pagamentos", req.nextUrl.origin);
   const [user, t] = await Promise.all([getUser(), getTenant()]);
-  if (!user || !t) return NextResponse.redirect(new URL("/entrar?next=/painel/configuracoes", req.nextUrl.origin));
+  if (!user || !t) return NextResponse.redirect(new URL("/entrar?next=/painel/pagamentos", req.nextUrl.origin));
   if (t.role !== "owner") {
     back.searchParams.set("pagamento", "so-dono");
     return NextResponse.redirect(back);
