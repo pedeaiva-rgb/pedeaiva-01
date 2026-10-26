@@ -93,8 +93,11 @@ export type SubmitInput = z.output<typeof quoteSchema> & {
 
 export type SubmitResult = { ok: true; id: string; token: string; number: number; total_cents: number } | { ok: false; error: string };
 
-/** Mesmo caminho para a loja online e para o PDV: preço do servidor, gravação atômica e sem duplicar. */
-export async function submitOrder(menu: Menu, data: SubmitInput, channel: Channel, actorId: string | null): Promise<SubmitResult> {
+export type OrderPayload = Record<string, unknown> & { pizzeria_id: string; idempotency_key: string; total_cents: number };
+export type PreparedOrder = { ok: true; payload: OrderPayload; quote: Quote } | { ok: false; error: string };
+
+/** Calcula e confere o pedido (preço do servidor) e monta o que vai para public.create_order, sem gravar nada. */
+export async function prepareOrder(menu: Menu, data: SubmitInput, channel: Channel, actorId: string | null): Promise<PreparedOrder> {
   let q: Quote;
   try {
     q = await computeQuote(menu, data, channel);
@@ -139,6 +142,15 @@ export async function submitOrder(menu: Menu, data: SubmitInput, channel: Channe
     created_by: actorId ?? "",
     items: q.lines,
   };
+  return { ok: true, payload, quote: q };
+}
+
+/** Mesmo caminho para a loja online e para o PDV: preço do servidor, gravação atômica e sem duplicar. */
+export async function submitOrder(menu: Menu, data: SubmitInput, channel: Channel, actorId: string | null): Promise<SubmitResult> {
+  const prep = await prepareOrder(menu, data, channel, actorId);
+  if (!prep.ok) return prep;
+  const { payload, quote: q } = prep;
+  const fulfillment: Fulfillment = data.fulfillment;
   const { data: rows, error } = await adminClient().rpc("create_order", { p: payload });
   const row = (rows as { order_id: string; public_token: string; number: number }[] | null)?.[0];
   if (error || !row) {

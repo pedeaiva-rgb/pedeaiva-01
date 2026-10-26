@@ -14,21 +14,27 @@ import { parseMoney } from "@/lib/money";
 import { normalizeBrPhone, PHONE_ERROR } from "@/lib/phone";
 import { idempotencyKey, useQuote } from "@/lib/use-quote";
 import type { DeliveryMode, Fulfillment, PaymentMethod } from "@/lib/types";
-import { placeSiteOrder, quoteSiteOrder } from "../actions";
+import type { PixView } from "@/lib/payments";
+import { placeSiteOrder, quoteSiteOrder, startSitePix } from "../actions";
 import { LocationButton, type PickedLocation } from "./location-button";
+import { PixPanel } from "./pix-panel";
 
 type Store = { name: string; allow_delivery: boolean; allow_pickup: boolean; delivery_mode: DeliveryMode };
-const PAY: [PaymentMethod, string, typeof QrCode][] = [
-  ["pix", "Pix", QrCode],
-  ["cartao", "Cartão", CreditCard],
-  ["dinheiro", "Dinheiro", Banknote],
-];
+/** "pix_online" = paga agora pelo site; os outros são pagos na entrega/retirada. */
+type PayChoice = PaymentMethod | "pix_online";
 
-export function Checkout({ slug, store, neighborhoods }: { slug: string; store: Store; neighborhoods: string[] }) {
+export function Checkout({ slug, store, neighborhoods, pixOnline }: { slug: string; store: Store; neighborhoods: string[]; pixOnline: boolean }) {
   const router = useRouter();
   const { items, clear } = useCart(slug);
   const [mode, setMode] = useState<Fulfillment>(store.allow_delivery ? "entrega" : "retirada");
-  const [pay, setPay] = useState<PaymentMethod>("pix");
+  const [pay, setPay] = useState<PayChoice>(pixOnline ? "pix_online" : "pix");
+  const [pix, setPix] = useState<PixView | null>(null);
+  const PAY: [PayChoice, string, typeof QrCode][] = [
+    ...(pixOnline ? ([["pix_online", "Pix agora", QrCode]] as [PayChoice, string, typeof QrCode][]) : []),
+    ["pix", pixOnline ? `Pix na ${mode}` : "Pix", QrCode],
+    ["cartao", "Cartão", CreditCard],
+    ["dinheiro", "Dinheiro", Banknote],
+  ];
   const [f, setF] = useState({ name: "", phone: "", street: "", number: "", complement: "", neighborhood: "", reference: "", change: "", notes: "", coupon: "", website: "" });
   const [location, setLocation] = useState<PickedLocation | null>(null);
   // O cupom aplicado fica guardado: vem da vitrine ("Usar") ou do botão Aplicar daqui.
@@ -60,10 +66,56 @@ export function Checkout({ slug, store, neighborhoods }: { slug: string; store: 
   const ready =
     !!quote && !quote.blocked && !quote.min_order_error && quote.delivery.ok && !quote.coupon_error && f.name.trim().length >= 2 && phoneOk && !!addressOk;
 
+  /** Pedido feito (ou Pix pago): limpa a sacola e abre o acompanhamento. */
+  function done(token: string) {
+    idempotencyKey(`site:${slug}`, true);
+    clear();
+    setCoupon("");
+    try {
+      localStorage.setItem(`pav-ultimo-pedido:${slug}`, token);
+    } catch {
+      // sem armazenamento: o link do pedido continua valendo
+    }
+    router.push(`/pedido/${token}`);
+  }
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!ready || sending) return;
     setSending(true);
+    const input = {
+      slug,
+      items: lines,
+      fulfillment: mode,
+      neighborhood,
+      coupon,
+      idempotency_key: idempotencyKey(`site:${slug}`),
+      customer_name: f.name,
+      customer_phone: f.phone,
+      address: mode === "entrega" ? { street: f.street, number: f.number, complement: f.complement, neighborhood: f.neighborhood, reference: f.reference } : null,
+      payment_method: (pay === "pix_online" ? "pix" : pay) as PaymentMethod,
+      change_for_cents: changeCents,
+      notes: f.notes,
+      website: f.website,
+      location: mode === "entrega" ? location : null,
+    };
+    if (pay === "pix_online") {
+      try {
+        const r = await startSitePix(input);
+        if (!r.ok) {
+          toast.error(r.error);
+          await refresh();
+          return;
+        }
+        setPix(r.pix);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } catch {
+        toast.error("Sem conexão. Tente de novo: o mesmo pedido não será cobrado duas vezes.");
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
     try {
       const r = await placeSiteOrder({
         slug,
@@ -86,21 +138,34 @@ export function Checkout({ slug, store, neighborhoods }: { slug: string; store: 
         await refresh();
         return;
       }
-      idempotencyKey(`site:${slug}`, true);
-      clear();
-      setCoupon("");
-      try {
-        localStorage.setItem(`pav-ultimo-pedido:${slug}`, r.token);
-      } catch {
-        // sem armazenamento: o link do pedido continua valendo
-      }
-      router.push(`/pedido/${r.token}`);
+      done(r.token);
     } catch {
       toast.error("Sem conexão. Tente de novo: o mesmo pedido não será duplicado.");
     } finally {
       setSending(false);
     }
   };
+
+  if (pix) {
+    return (
+      <PixPanel
+        key={pix.id}
+        pix={pix}
+        onPaid={done}
+        onRetry={() => {
+          // Pix novo = pedido novo (o anterior expirou sem cobrar nada).
+          idempotencyKey(`site:${slug}`, true);
+          setPix(null);
+          toast.message("Confira o pedido e toque em “Gerar Pix” de novo.");
+        }}
+        onBack={() => {
+          idempotencyKey(`site:${slug}`, true);
+          setPix(null);
+          setPay("pix");
+        }}
+      />
+    );
+  }
 
   return (
     <form onSubmit={submit}>
@@ -175,8 +240,8 @@ export function Checkout({ slug, store, neighborhoods }: { slug: string; store: 
           )}
 
           <section className="card space-y-3 p-5">
-            <h2 className="text-base font-bold">Pagamento na {mode}</h2>
-            <div className="grid grid-cols-3 gap-2">
+            <h2 className="text-base font-bold">{pixOnline ? "Pagamento" : `Pagamento na ${mode}`}</h2>
+            <div className={`grid gap-2 ${PAY.length > 3 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"}`}>
               {PAY.map(([id, label, Icon]) => (
                 <button key={id} type="button" data-active={pay === id} onClick={() => setPay(id)} className="chip !justify-center !rounded-2xl !py-3">
                   <Icon className="h-4 w-4" /> {label}
@@ -189,7 +254,10 @@ export function Checkout({ slug, store, neighborhoods }: { slug: string; store: 
               </Field>
             )}
             <p className="flex items-start gap-2 rounded-xl bg-info-soft p-3 text-xs text-info">
-              <Info className="mt-0.5 h-4 w-4 shrink-0" /> O pagamento é feito na {mode}. Sua escolha avisa a loja como você vai pagar.
+              <Info className="mt-0.5 h-4 w-4 shrink-0" />
+              {pay === "pix_online"
+                ? "Você paga agora pelo Pix (QR Code ou copia e cola) e o pedido vai para a loja assim que o pagamento for confirmado."
+                : `O pagamento é feito na ${mode}. Sua escolha avisa a loja como você vai pagar.`}
             </p>
           </section>
 
@@ -243,6 +311,8 @@ export function Checkout({ slug, store, neighborhoods }: { slug: string; store: 
               <>
                 <Spinner className="h-4 w-4" /> Enviando…
               </>
+            ) : pay === "pix_online" ? (
+              "Gerar Pix e pagar"
             ) : (
               "Fazer pedido"
             )}

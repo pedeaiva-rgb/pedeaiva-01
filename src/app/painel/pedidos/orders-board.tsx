@@ -13,6 +13,7 @@ import { ACTION_LABEL, CHANNEL_LABEL, nextStatus, PAYMENT_LABEL, PAYMENT_STATUS,
 import { formatBrPhone } from "@/lib/phone";
 import { browserClient } from "@/lib/supabase/client";
 import type { Order, OrderItem, OrderStatus, PaymentMethod, Role } from "@/lib/types";
+import { refundOrderOnline } from "./actions";
 
 type Row = Order & { order_items: OrderItem[] };
 type Period = "abertos" | "hoje" | "7d";
@@ -192,6 +193,8 @@ function OrderDrawer({ o, role, canRefund, storeName, onClose, onChanged }: { o:
   const [cancelReason, setCancelReason] = useState<string | null>(null);
   const [refundReason, setRefundReason] = useState<string | null>(null);
   const [method, setMethod] = useState<PaymentMethod>(o.payment_method);
+  /** Pago pelo site (Pix online): de onde veio e se o dinheiro já voltou ao cliente. */
+  const [online, setOnline] = useState<{ provider: string; status: string; error: string | null } | null>(null);
   const next = nextStatus(o.fulfillment, o.status);
   const a = o.address;
 
@@ -202,6 +205,12 @@ function OrderDrawer({ o, role, canRefund, storeName, onClose, onChanged }: { o:
       .eq("order_id", o.id)
       .order("created_at")
       .then(({ data }) => alive && setEvents((data ?? []) as Event[]));
+    // Cobrança online do pedido (só dono, gerente e caixa enxergam; para os outros vem vazio).
+    sb.from("online_charges")
+      .select("provider, status, error")
+      .eq("order_id", o.id)
+      .maybeSingle()
+      .then(({ data }) => alive && setOnline((data as { provider: string; status: string; error: string | null } | null) ?? null));
     return () => {
       alive = false;
     };
@@ -331,6 +340,14 @@ function OrderDrawer({ o, role, canRefund, storeName, onClose, onChanged }: { o:
             Pagamento: {PAYMENT_LABEL[o.payment_method]}{" "}
             <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] ${PAYMENT_STATUS[o.payment_status].cls}`}>{PAYMENT_STATUS[o.payment_status].label}</span>
           </p>
+          {online && (
+            <p className={`rounded-xl p-2 text-xs font-bold ${online.status === "estornado" ? "bg-sand text-muted" : "bg-success-soft text-success"}`}>
+              {online.status === "estornado"
+                ? "Pix online devolvido ao cliente"
+                : `Pago online pelo Pix (${online.provider === "mercadopago" ? "Mercado Pago" : online.provider}): não cobrar de novo`}
+              {online.error && online.status !== "estornado" ? <span className="block font-normal text-danger">{online.error}</span> : null}
+            </p>
+          )}
           {o.change_for_cents ? <p className="text-xs text-muted">Troco para {brl(o.change_for_cents)} (levar {brl(o.change_for_cents - o.total_cents)})</p> : null}
           {o.payment_status === "pendente" && o.status !== "cancelado" && CASHIER.includes(role) && (
             <div className="flex gap-2">
@@ -370,7 +387,18 @@ function OrderDrawer({ o, role, canRefund, storeName, onClose, onChanged }: { o:
                     disabled={busy || refundReason.trim().length < 3 || (needsApproval && managerPin.length !== 4)}
                     onClick={async () => {
                       if (!(await approve("estornar"))) return;
-                      if (await act(() => sb.rpc("refund_payment", { _order: o.id, _reason: refundReason }), "Estorno registrado")) setRefundReason(null);
+                      if (!(await act(() => sb.rpc("refund_payment", { _order: o.id, _reason: refundReason }), "Estorno registrado"))) return;
+                      setRefundReason(null);
+                      // Pix pago pelo site: devolve o dinheiro ao cliente pelo provedor.
+                      if (online && online.status === "pago") {
+                        const r = await refundOrderOnline(o.id).catch(() => ({ ok: false as const, error: "Sem conexão." }));
+                        if (r.ok) {
+                          toast.success("Pix devolvido ao cliente");
+                          setOnline({ ...online, status: "estornado", error: null });
+                        }
+                        else toast.error(`O estorno foi registrado, mas o Pix não voltou sozinho: ${r.error} Devolva pelo app do Mercado Pago.`, { duration: 15_000 });
+                        await onChanged();
+                      }
                     }}
                   >
                     Estornar

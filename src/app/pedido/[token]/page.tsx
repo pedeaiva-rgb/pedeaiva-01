@@ -104,7 +104,9 @@ export default async function TrackingPage({ params }: PageProps<"/pedido/[token
             </div>
           )}
           <p className="text-sm">
-            Pagamento: <b>{PAYMENT_LABEL[t.payment_method]}</b> na {t.fulfillment}{" "}
+            {/* Já pago (ex.: Pix pelo site): não diz "na entrega". */}
+            Pagamento: <b>{PAYMENT_LABEL[t.payment_method]}</b>
+            {t.payment_status === "recebido" ? " " : ` na ${t.fulfillment} `}
             <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${PAYMENT_STATUS[t.payment_status].cls}`}>{PAYMENT_STATUS[t.payment_status].label}</span>
           </p>
         </div>

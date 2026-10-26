@@ -969,3 +969,56 @@ describe("mesas pelo QR Code", () => {
     expect((await one<{ n: number }>(user(OWNER_A), "select count(*)::int n from public.table_calls where table_id = $1 and resolved_at is null", [mesa])).n).toBe(0);
   });
 });
+
+describe("pagamento online (Pix)", () => {
+  const charge = async (over: Record<string, unknown> = {}) =>
+    (
+      await one<{ id: string }>(
+        SERVICE,
+        "insert into public.online_charges (pizzeria_id, idempotency_key, provider, amount_cents, order_payload, expires_at) values ($1, $2, 'mercadopago', 5000, $3, now() + interval '15 minutes') returning id",
+        [pzA, `pix-${Math.random().toString(36).slice(2)}-xxxxxxxxxx`, orderPayload({ payment_method: "pix", customer_phone: `(71) 98${String(Math.floor(Math.random() * 1e7)).padStart(7, "0")}`, ...over })],
+      )
+    ).id;
+
+  it("segredos e cobranças ficam fora do alcance de quem não deve", async () => {
+    await one(SERVICE, "insert into public.payment_accounts (pizzeria_id, provider, mode, account_label) values ($1, 'mercadopago', 'conta_propria', 'loja@mp') returning pizzeria_id", [pzA]);
+    await one(SERVICE, "insert into public.payment_secrets (pizzeria_id, data) values ($1, 'cifrado') returning pizzeria_id", [pzA]);
+    expect(await fails(user(OWNER_A), "select data from public.payment_secrets")).toMatch(/permission denied/);
+    expect(await fails(ANON, "select * from public.payment_accounts")).toMatch(/permission denied/);
+    expect(await rows(user(CASHIER_A), "select * from public.payment_accounts")).toHaveLength(0);
+    expect((await rows(user(OWNER_A), "select account_label from public.payment_accounts")).length).toBe(1);
+    expect(await rows(user(OWNER_B), "select * from public.payment_accounts where pizzeria_id = $1", [pzA])).toHaveLength(0);
+    const id = await charge();
+    expect(await fails(user(CASHIER_A), "select order_payload from public.online_charges where id = $1", [id])).toMatch(/permission denied/);
+    expect((await one<{ status: string }>(user(CASHIER_A), "select status from public.online_charges where id = $1", [id])).status).toBe("pendente");
+    expect(await fails(user(OWNER_A), "select public.settle_online_charge($1, 5000)", [id])).toMatch(/permission denied/);
+    expect(await fails(user(OWNER_A), "update public.pizzerias set online_pix = true where id = $1 returning id", [pzA])).toMatch(/permission denied/);
+  });
+
+  it("pedido só nasce quando o Pix é pago; aviso repetido não duplica", async () => {
+    const id = await charge();
+    expect(await fails(SERVICE, "select public.settle_online_charge($1, 4000)", [id])).toMatch(/Valor pago menor/);
+    const a = await one<{ r: { order_id: string; token: string; created: boolean } }>(SERVICE, "select public.settle_online_charge($1, 5000) r", [id]);
+    expect(a.r.created).toBe(true);
+    const b = await one<{ r: { order_id: string; created: boolean } }>(SERVICE, "select public.settle_online_charge($1, 5000) r", [id]);
+    expect(b.r).toMatchObject({ order_id: a.r.order_id, created: false });
+    const o = await one<{ payment_status: string; status: string }>(user(OWNER_A), "select payment_status, status from public.orders where id = $1", [a.r.order_id]);
+    expect(o).toMatchObject({ payment_status: "recebido", status: "novo" });
+    expect((await one<{ n: number }>(user(OWNER_A), "select count(*)::int n from public.payments where order_id = $1 and method = 'pix'", [a.r.order_id])).n).toBe(1);
+    // Estorno pelo caminho normal da loja.
+    await one(user(OWNER_A), "select public.refund_payment($1, 'cliente desistiu')", [a.r.order_id]);
+    expect((await one<{ s: string }>(user(OWNER_A), "select payment_status s from public.orders where id = $1", [a.r.order_id])).s).toBe("estornado");
+  });
+
+  it("pago depois do prazo ainda vira pedido; pedido impossível marca erro para devolver", async () => {
+    const late = await charge();
+    await db.query("update public.online_charges set status = 'expirado' where id = $1", [late]);
+    expect((await one<{ r: { created: boolean } }>(SERVICE, "select public.settle_online_charge($1, 5000) r", [late])).r.created).toBe(true);
+    const bad = await charge({ coupon_id: "00000000-0000-4000-8000-000000000999", coupon_code: "NAOEXISTE" });
+    const r = await one<{ r: { order_id: string | null; error: string } }>(SERVICE, "select public.settle_online_charge($1, 5000) r", [bad]);
+    expect(r.r.order_id).toBeNull();
+    expect((await one<{ s: string }>(SERVICE, "select status s from public.online_charges where id = $1", [bad])).s).toBe("erro");
+    await db.query("update public.online_charges set status = 'estornado' where id = $1", [bad]);
+    expect(await fails(SERVICE, "select public.settle_online_charge($1, 5000)", [bad])).toMatch(/não pode ser paga/);
+  });
+});

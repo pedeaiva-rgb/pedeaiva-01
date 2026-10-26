@@ -27,6 +27,8 @@ export type Pizzeria = {
   /** QR Code das mesas: cliente pode pedir pelo celular; e se o pedido de mesa já aberta vai direto para a cozinha. */
   qr_ordering?: boolean;
   qr_auto_confirm?: boolean;
+  /** Aceita Pix pago na hora pelo site (pagamento online). */
+  online_pix?: boolean;
   half_pricing: HalfPricing;
   delivery_mode: DeliveryMode;
   delivery_fee_cents: number;

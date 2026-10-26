@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getStoreMenu } from "@/lib/menu";
+import { pixReady } from "@/lib/payments";
 import { Checkout } from "./checkout";
 
 export const metadata: Metadata = { title: "Finalizar pedido" };
@@ -16,6 +17,7 @@ export default async function CheckoutPage({ params }: PageProps<"/[slug]/finali
       slug={slug}
       store={{ name: pz.name, allow_delivery: pz.allow_delivery, allow_pickup: pz.allow_pickup, delivery_mode: pz.delivery_mode }}
       neighborhoods={neighborhoods}
+      pixOnline={await pixReady(pz.id).catch(() => false)}
     />
   );
 }

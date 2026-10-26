@@ -7,20 +7,26 @@ import { NoAccess } from "../no-access";
 import { DeliveryRules } from "./delivery-rules";
 import { CounterLink, type CounterLinkInfo } from "./counter-link";
 import { KitchenLink, type KitchenLinkInfo } from "./kitchen-link";
+import { OnlinePayments } from "./online-payments";
+import { mercadoPago } from "@/lib/payments/mercadopago";
+import { secretsConfigured } from "@/lib/payments/secrets";
+import { simulatorEnabled } from "@/lib/payments/simulado";
 import { SettingsForm } from "./settings-form";
 
 export const metadata: Metadata = { title: "Configurações" };
 
-export default async function ConfiguracoesPage() {
+export default async function ConfiguracoesPage({ searchParams }: PageProps<"/painel/configuracoes">) {
+  const notice = (await searchParams).pagamento;
   const t = (await getTenant())!;
   if (!allowed(t, "configuracoes")) return <NoAccess />;
   const [sb, h] = await Promise.all([createClient(), headers()]);
-  const [pz, zones, kitchen, counter] = await Promise.all([
+  const [pz, zones, kitchen, counter, account] = await Promise.all([
     sb.from("pizzerias").select("*").eq("id", t.pizzeria.id).single(),
     sb.from("delivery_zones").select("*").eq("pizzeria_id", t.pizzeria.id).order("name"),
     // Sem a migração do link da cozinha, a função ainda não existe (o painel mostra o aviso).
     sb.rpc("kitchen_link", { _pz: t.pizzeria.id }),
     sb.rpc("counter_link", { _pz: t.pizzeria.id }),
+    sb.from("payment_accounts").select("provider, account_label, status").eq("pizzeria_id", t.pizzeria.id).maybeSingle(),
   ]);
   const origin = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("x-forwarded-host") ?? h.get("host")}`;
   return (
@@ -28,6 +34,17 @@ export default async function ConfiguracoesPage() {
       <SettingsForm pizzeria={pz.data as Pizzeria} zones={(zones.data ?? []) as DeliveryZone[]} />
       <KitchenLink pizzeriaId={t.pizzeria.id} info={(kitchen.data as KitchenLinkInfo[] | null)?.[0] ?? null} origin={origin} />
       <CounterLink pizzeriaId={t.pizzeria.id} info={(counter.data as CounterLinkInfo[] | null)?.[0] ?? null} origin={origin} />
+      <OnlinePayments
+        info={{
+          missing: !!account.error,
+          isOwner: t.role === "owner",
+          enabled: (pz.data as Pizzeria).online_pix === true,
+          account: account.data ? { provider: account.data.provider, label: account.data.account_label, status: account.data.status } : null,
+          mpReady: mercadoPago.configured() && secretsConfigured(),
+          simulator: simulatorEnabled() && secretsConfigured(),
+          notice: typeof notice === "string" ? notice : null,
+        }}
+      />
       <DeliveryRules pizzeria={pz.data as Pizzeria} />
     </>
   );
