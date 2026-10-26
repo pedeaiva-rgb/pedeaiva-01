@@ -24,6 +24,9 @@ export default async function Overview() {
   if (t.role === "kitchen") redirect("/painel/cozinha");
   if (t.role === "attendant") redirect("/painel/pedidos");
   const pz = t.pizzeria;
+  // Gerente sem "ver o faturamento" vê a operação, mas não os valores.
+  const money = t.role !== "manager" || t.perms.faturamento;
+  const hide = (v: string) => (money ? v : "—");
   const sb = await createClient();
   const start = startOfTodaySP();
   const now = serverNow();
@@ -90,10 +93,10 @@ export default async function Overview() {
 
       {/* Vendas */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi label="Vendido hoje" value={brl(today.revenue)} icon={Pizza} delta={revChange} hint={prev.revenue ? `semana passada até agora: ${brl(prev.revenue)}` : "pedidos confirmados"} />
+        <Kpi label="Vendido hoje" value={hide(brl(today.revenue))} icon={Pizza} delta={money ? revChange : null} hint={money && prev.revenue ? `semana passada até agora: ${brl(prev.revenue)}` : "pedidos confirmados"} />
         <Kpi label="Pedidos" value={String(today.count)} icon={Receipt} delta={countChange} hint={`${today.cancelled} cancelado(s)${prev.count ? ` · semana passada: ${prev.count}` : ""}`} />
-        <Kpi label="Ticket médio" value={brl(today.avgTicket)} icon={TrendingUp} hint={prev.avgTicket ? `semana passada: ${brl(prev.avgTicket)}` : "valor médio por pedido"} />
-        <Kpi label="Recebido hoje" value={can(t.role, "pdv") ? brl(received) : "—"} icon={Wallet} hint="registrado no caixa, já descontados estornos" />
+        <Kpi label="Ticket médio" value={hide(brl(today.avgTicket))} icon={TrendingUp} hint={money && prev.avgTicket ? `semana passada: ${brl(prev.avgTicket)}` : "valor médio por pedido"} />
+        <Kpi label="Recebido hoje" value={can(t.role, "pdv") && money ? brl(received) : "—"} icon={Wallet} hint="registrado no caixa, já descontados estornos" />
       </div>
 
       {/* Operação agora */}
@@ -181,7 +184,7 @@ export default async function Overview() {
                 {cashNow.opened_by ? ` por ${cashNow.opened_by}` : ""}
               </p>
               <p>
-                Já entrou: <b>{brl(cashNow.totals.total_recebido)}</b>
+                Já entrou: <b>{hide(brl(cashNow.totals.total_recebido))}</b>
               </p>
             </div>
           ) : (
@@ -241,7 +244,7 @@ export default async function Overview() {
                   <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-tomato" />
                   <span>
                     <b>#{byId.get(c.order_id)?.number ?? "?"}</b> · {time(c.created_at)}
-                    {byId.get(c.order_id) ? ` · ${brl(byId.get(c.order_id)!.total_cents)}` : ""}
+                    {money && byId.get(c.order_id) ? ` · ${brl(byId.get(c.order_id)!.total_cents)}` : ""}
                     <span className="block text-xs text-muted">{c.note ?? "sem motivo"}</span>
                   </span>
                 </li>

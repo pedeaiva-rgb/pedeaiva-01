@@ -32,6 +32,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
       pizzeria={{ id: tenant.pizzeria.id, name: tenant.pizzeria.name, slug: tenant.pizzeria.slug, accepting: tenant.pizzeria.accepting_orders }}
       stores={list.map((m) => ({ id: m.pizzeria.id, name: m.pizzeria.name }))}
       access={ACCESS}
+      perms={tenant.perms}
       counter={readCounterCookie((await cookies()).get(COUNTER_COOKIE)?.value)}
     >
       {children}

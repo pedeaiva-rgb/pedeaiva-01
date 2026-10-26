@@ -2,10 +2,11 @@ import "server-only";
 import { cookies } from "next/headers";
 import { cache } from "react";
 import { createClient, getUser } from "./supabase/server";
+import { areaAllowed, DEFAULT_MANAGER_PERMS, FULL_PERMS, type ManagerPerms } from "./permissions";
 import type { Pizzeria, Role } from "./types";
 
 export const TENANT_COOKIE = "pav-loja";
-export type Membership = { pizzeria: Pizzeria; role: Role };
+export type Membership = { pizzeria: Pizzeria; role: Role; perms: ManagerPerms };
 
 /** O que cada função vê no painel. O banco aplica as mesmas regras de verdade. */
 export const ACCESS = {
@@ -18,11 +19,16 @@ export const ACCESS = {
   cardapio: ["owner", "manager"],
   configuracoes: ["owner", "manager"],
   cupons: ["owner", "manager"],
-  equipe: ["owner"],
+  equipe: ["owner", "manager"],
   automacoes: ["owner", "manager"],
 } as const satisfies Record<string, readonly Role[]>;
 
 export const can = (role: Role, area: keyof typeof ACCESS) => (ACCESS[area] as readonly Role[]).includes(role);
+
+/** Como `can`, mas para o gerente também confere o que o dono liberou. */
+export const allowed = (t: Membership, area: keyof typeof ACCESS) => areaAllowed(t.role, t.perms, area, ACCESS);
+/** Permissão extra do gerente (estornar, ver faturamento). Dono sempre pode. */
+export const allowedPerm = (t: Membership, p: keyof ManagerPerms) => t.role === "owner" || (t.role === "manager" && t.perms[p]);
 
 export const getMemberships = cache(async (): Promise<Membership[]> => {
   const user = await getUser();
@@ -30,7 +36,16 @@ export const getMemberships = cache(async (): Promise<Membership[]> => {
   const sb = await createClient();
   const { data, error } = await sb.from("members").select("role, pizzeria:pizzerias(*)").eq("user_id", user.id).order("created_at");
   if (error) throw new Error("Não foi possível carregar suas pizzarias");
-  return (data as unknown as { role: Role; pizzeria: Pizzeria | null }[]).filter((m) => m.pizzeria).map((m) => ({ role: m.role, pizzeria: m.pizzeria! }));
+  const list = (data as unknown as { role: Role; pizzeria: Pizzeria | null }[]).filter((m) => m.pizzeria);
+  // Permissões do gerente (sem a migração, valem as de antes).
+  const managed = list.filter((m) => m.role === "manager").map((m) => m.pizzeria!.id);
+  const settings = managed.length ? (await sb.from("manager_settings").select("*").in("pizzeria_id", managed)).data ?? [] : [];
+  const byPz = new Map((settings as (ManagerPerms & { pizzeria_id: string })[]).map((s) => [s.pizzeria_id, s]));
+  return list.map((m) => {
+    const s = byPz.get(m.pizzeria!.id);
+    const perms: ManagerPerms = m.role === "owner" ? FULL_PERMS : s ? { cardapio: s.cardapio, cupons: s.cupons, configuracoes: s.configuracoes, automacoes: s.automacoes, estornar: s.estornar, faturamento: s.faturamento, equipe: s.equipe } : DEFAULT_MANAGER_PERMS;
+    return { role: m.role, pizzeria: m.pizzeria!, perms };
+  });
 });
 
 /** Pizzaria escolhida no seletor (ou a primeira). */

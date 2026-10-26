@@ -770,3 +770,57 @@ describe("caixa do dia", () => {
     expect(await fails(user(CASHIER_A), "select public.cash_movement($1, 'suprimento', 100, 'teste')", [pzA])).toMatch(/Abra o caixa/);
   });
 });
+
+describe("permissões do gerente", () => {
+  const MGR = "00000000-0000-4000-8000-0000000000f1";
+  const NEWBIE = "00000000-0000-4000-8000-0000000000f2";
+  const perms = (p: Record<string, boolean>) => one(user(OWNER_A), "select public.set_manager_perms($1, $2)", [pzA, p]);
+  beforeAll(async () => {
+    await db.query("insert into auth.users (id, email) values ($1, 'gerente@x.com'), ($2, 'novato@x.com')", [MGR, NEWBIE]);
+    await one(user(OWNER_A), "select public.add_member_by_email($1, 'gerente@x.com', 'manager', 'Gil Gerente')", [pzA]);
+  });
+
+  it("padrão: gerente mexe no cardápio e cupons, mas não na equipe", async () => {
+    expect(await rows(user(MGR), "update public.sizes set description = description where pizzeria_id = $1 returning id", [pzA])).not.toHaveLength(0);
+    expect(await fails(user(MGR), "select * from public.team_invite($1)", [pzA])).toMatch(/Sem permissão/);
+    expect(await fails(user(MGR), "select public.set_manager_perms($1, '{}')", [pzA])).toMatch(/Só o dono/);
+  });
+
+  it("dono tira cardápio, cupons, configurações e automações do gerente", async () => {
+    await perms({ cardapio: false, cupons: false, configuracoes: false, automacoes: false });
+    expect(await rows(user(MGR), "update public.sizes set description = description where pizzeria_id = $1 returning id", [pzA])).toHaveLength(0);
+    expect(await rows(user(MGR), "select id from public.coupons where pizzeria_id = $1", [pzA])).toHaveLength(0);
+    expect(await rows(user(MGR), "update public.pizzerias set name = name where id = $1 returning id", [pzA])).toHaveLength(0);
+    expect(await rows(user(MGR), "select * from public.pizzeria_webhooks where pizzeria_id = $1", [pzA])).toHaveLength(0);
+    // Dono continua podendo tudo.
+    expect(await rows(user(OWNER_A), "update public.sizes set description = description where pizzeria_id = $1 returning id", [pzA])).not.toHaveLength(0);
+    await perms({ cardapio: true, cupons: true, configuracoes: true, automacoes: true });
+  });
+
+  it("sem estorno liberado, gerente não estorna nem autoriza o caixa", async () => {
+    await one(user(MGR), "select public.set_my_pin($1, '6043')", [pzA]);
+    await perms({ estornar: false });
+    const o = await createOrder(orderPayload({ channel: "telefone", customer_phone: "71912340001" }));
+    await one(user(CASHIER_A), "select public.register_payment($1, 'pix')", [o.order_id]);
+    expect(await fails(user(MGR), "select public.refund_payment($1, 'teste gerente')", [o.order_id])).toMatch(/não liberou estorno/);
+    expect(await fails(user(CASHIER_A), "select public.request_approval($1, 'estornar', '6043')", [o.order_id])).toMatch(/PIN de gerente errado/);
+    await perms({ estornar: true });
+    await one(user(MGR), "select public.refund_payment($1, 'teste gerente')", [o.order_id]);
+  });
+
+  it("com equipe liberada, gerente aprova só funções abaixo dele", async () => {
+    await perms({ equipe: true });
+    await one(user(MGR), "select public.set_team_invite_active($1, true)", [pzA]);
+    const code = (await one<{ code: string }>(user(MGR), "select * from public.team_invite($1)", [pzA])).code;
+    await one(user(NEWBIE), "select public.request_join($1, 'Nina Novata', '52998224725', '71911112222')", [code]);
+    const req = (await one<{ id: string }>(user(MGR), "select id from public.join_requests where user_id = $1", [NEWBIE])).id;
+    expect(await fails(user(MGR), "select public.approve_join($1, 'manager')", [req])).toMatch(/só libera caixa/);
+    await one(user(MGR), "select public.approve_join($1, 'attendant')", [req]);
+    expect(await fails(user(MGR), "update public.members set role = 'manager' where pizzeria_id = $1 and user_id = $2 returning user_id", [pzA, NEWBIE])).toMatch(/row-level security/);
+    expect(await rows(user(MGR), "update public.members set role = 'cashier' where pizzeria_id = $1 and user_id = $2 returning user_id", [pzA, NEWBIE])).toHaveLength(1);
+    expect(await rows(user(MGR), "update public.members set role = 'kitchen' where pizzeria_id = $1 and user_id = $2 returning user_id", [pzA, OWNER_A])).toHaveLength(0);
+    expect(await rows(user(MGR), "delete from public.members where pizzeria_id = $1 and user_id = $2 returning user_id", [pzA, NEWBIE])).toHaveLength(1);
+    await perms({ equipe: false });
+    expect(await fails(user(MGR), "select * from public.team_pins($1)", [pzA])).toMatch(/Sem permissão/);
+  });
+});

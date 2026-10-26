@@ -10,6 +10,7 @@ import { dbError } from "@/lib/db-error";
 import { ROLE_LABEL } from "@/lib/order-labels";
 import { formatBrPhone } from "@/lib/phone";
 import { browserClient } from "@/lib/supabase/client";
+import { PERM_LABEL, type ManagerPerms } from "@/lib/permissions";
 import type { Role } from "@/lib/types";
 
 export type Member = {
@@ -38,6 +39,8 @@ type Invite = { code: string; active: boolean; url: string };
 const ROLES: Role[] = ["owner", "manager", "cashier", "attendant", "kitchen", "driver"];
 /** Funções que o dono escolhe ao aprovar alguém (dono só por promoção, na lista). */
 const TEAM_ROLES = ROLES.filter((r) => r !== "owner");
+/** O que o gerente (com "cuidar da equipe") pode dar. */
+const BELOW_MANAGER: Role[] = ["cashier", "attendant", "kitchen", "driver"];
 
 /** Espelho das regras do banco (o banco é quem decide). */
 const PERMS: [string, Role[]][] = [
@@ -61,6 +64,8 @@ export function TeamManager({
   pending,
   invite,
   missingMigration,
+  viewer,
+  managerPerms,
 }: {
   pizzeriaId: string;
   pizzeriaName: string;
@@ -68,9 +73,17 @@ export function TeamManager({
   pending: JoinRequest[];
   invite: Invite | null;
   missingMigration: boolean;
+  /** Quem está vendo: o gerente só mexe em quem está abaixo dele. */
+  viewer: Role;
+  /** Só para o dono (null = falta rodar a migração das permissões). */
+  managerPerms: ManagerPerms | null;
 }) {
   const router = useRouter();
   const sb = browserClient();
+  const owner = viewer === "owner";
+  // O que este usuário pode dar/mudar: o dono, qualquer função; o gerente, só abaixo dele.
+  const grantable = owner ? ROLES : BELOW_MANAGER;
+  const editable = (m: Member) => !m.is_me && (owner || BELOW_MANAGER.includes(m.role));
   const [f, setF] = useState({ email: "", name: "", role: "cashier" as Role });
   const [chosen, setChosen] = useState<Record<string, Role | "">>({});
   const [busy, setBusy] = useState(false);
@@ -147,7 +160,7 @@ export function TeamManager({
                         onChange={(e) => setChosen({ ...chosen, [r.id]: e.target.value as Role })}
                       >
                         <option value="">Escolha a função…</option>
-                        {TEAM_ROLES.map((role) => (
+                        {(owner ? TEAM_ROLES : BELOW_MANAGER).map((role) => (
                           <option key={role} value={role}>
                             {ROLE_LABEL[role]}
                           </option>
@@ -188,7 +201,7 @@ export function TeamManager({
                     {m.has_pin != null && !["kitchen", "driver"].includes(m.role) && (
                       <p className="flex items-center gap-2 text-xs">
                         <span className={m.has_pin ? "font-semibold text-success" : "text-muted"}>{m.has_pin ? "PIN do balcão criado" : "Ainda sem PIN do balcão"}</span>
-                        {m.has_pin && !m.is_me && (
+                        {m.has_pin && editable(m) && (
                           <button
                             className="font-bold text-muted hover:text-danger"
                             disabled={busy}
@@ -203,7 +216,7 @@ export function TeamManager({
                       </p>
                     )}
                   </div>
-                  {m.is_me ? (
+                  {!editable(m) ? (
                     <span className="rounded-full bg-sand px-3 py-1 text-xs font-bold">{ROLE_LABEL[m.role]}</span>
                   ) : (
                     <>
@@ -219,7 +232,7 @@ export function TeamManager({
                           )
                         }
                       >
-                        {ROLES.map((r) => (
+                        {grantable.map((r) => (
                           <option key={r} value={r}>
                             {ROLE_LABEL[r]}
                           </option>
@@ -309,7 +322,7 @@ export function TeamManager({
               </Field>
               <Field label="Função">
                 <select className="field" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value as Role })}>
-                  {ROLES.map((r) => (
+                  {grantable.map((r) => (
                     <option key={r} value={r}>
                       {ROLE_LABEL[r]}
                     </option>
@@ -323,6 +336,8 @@ export function TeamManager({
           </Panel>
         </div>
       </div>
+
+      {owner && <ManagerPermsPanel pizzeriaId={pizzeriaId} perms={managerPerms} onChanged={() => router.refresh()} />}
 
       <Panel title="O que cada função pode fazer" className="mt-4">
         <div className="overflow-x-auto">
@@ -353,5 +368,43 @@ export function TeamManager({
         </div>
       </Panel>
     </>
+  );
+}
+
+/** Dono escolhe o que o gerente pode fazer (vale para todos os gerentes da loja). */
+function ManagerPermsPanel({ pizzeriaId, perms, onChanged }: { pizzeriaId: string; perms: ManagerPerms | null; onChanged: () => void }) {
+  const [busy, setBusy] = useState<keyof ManagerPerms | null>(null);
+  if (!perms) {
+    return (
+      <Panel title="O que o gerente pode fazer" className="mt-4">
+        <p className="text-sm">
+          Falta rodar no Supabase o SQL <code className="rounded bg-sand px-1">20261025060000_permissoes_gerente.sql</code>.
+        </p>
+      </Panel>
+    );
+  }
+  const set = async (k: keyof ManagerPerms, v: boolean) => {
+    setBusy(k);
+    const { error } = await browserClient().rpc("set_manager_perms", { _pz: pizzeriaId, _perms: { [k]: v } });
+    setBusy(null);
+    if (error) return toast.error(dbError(error));
+    toast.success(`${PERM_LABEL[k].title}: ${v ? "liberado" : "bloqueado"} para o gerente`);
+    onChanged();
+  };
+  return (
+    <Panel title="O que o gerente pode fazer" className="mt-4">
+      <p className="mb-3 text-xs text-muted">Vale para todos os gerentes desta loja. O gerente sempre cuida dos pedidos, PDV, cozinha, entregas e caixa.</p>
+      <ul className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+        {(Object.keys(PERM_LABEL) as (keyof ManagerPerms)[]).map((k) => (
+          <li key={k} className="flex items-center justify-between gap-3 text-sm">
+            <span>
+              <span className="block font-semibold">{PERM_LABEL[k].title}</span>
+              <span className="text-xs text-muted">{PERM_LABEL[k].hint}</span>
+            </span>
+            <Toggle checked={perms[k]} label={PERM_LABEL[k].title} disabled={busy != null} onChange={(v) => set(k, v)} />
+          </li>
+        ))}
+      </ul>
+    </Panel>
   );
 }

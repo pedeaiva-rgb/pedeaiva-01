@@ -79,7 +79,8 @@ export async function ensureGeocoded(pizzeriaId: string): Promise<GeoResult> {
 
 /** O dono marca no mapa onde fica a loja (quando o endereço não é achado ou ficou impreciso). */
 export async function setStoreLocation(pizzeriaId: string, pos: LatLng): Promise<{ ok: boolean; message: string }> {
-  if (!(await hasRole(pizzeriaId, ACCESS.configuracoes))) return { ok: false, message: "Você não tem permissão para isso." };
+  const { data: ok } = await (await createClient()).rpc("manager_can", { _pz: pizzeriaId, _perm: "configuracoes" });
+  if (ok !== true) return { ok: false, message: "Você não tem permissão para isso." };
   if (!(Math.abs(pos.lat) <= 90 && Math.abs(pos.lng) <= 180)) return { ok: false, message: "Ponto inválido." };
   const { error } = await adminClient().from("pizzerias").update({ lat: pos.lat, lng: pos.lng }).eq("id", pizzeriaId);
   return error ? { ok: false, message: "Não foi possível salvar o ponto." } : { ok: true, message: "Ponto da loja salvo" };

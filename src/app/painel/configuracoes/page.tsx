@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { can, getTenant } from "@/lib/tenant";
+import { allowed, getTenant } from "@/lib/tenant";
 import type { DeliveryZone, Pizzeria } from "@/lib/types";
 import { NoAccess } from "../no-access";
 import { DeliveryRules } from "./delivery-rules";
@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "Configurações" };
 
 export default async function ConfiguracoesPage() {
   const t = (await getTenant())!;
-  if (!can(t.role, "configuracoes")) return <NoAccess />;
+  if (!allowed(t, "configuracoes")) return <NoAccess />;
   const [sb, h] = await Promise.all([createClient(), headers()]);
   const [pz, zones, kitchen, counter] = await Promise.all([
     sb.from("pizzerias").select("*").eq("id", t.pizzeria.id).single(),

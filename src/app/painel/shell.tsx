@@ -6,6 +6,7 @@ import { useState, type ReactNode } from "react";
 import { Bike, ChefHat, ExternalLink, KeyRound, LayoutDashboard, LogOut, Menu, Monitor, Pizza, Receipt, Settings, Ticket, Users, Wallet, X, Zap } from "lucide-react";
 import { PavLogo } from "@/components/brand/logo";
 import { ROLE_LABEL } from "@/lib/order-labels";
+import { areaAllowed, type ManagerPerms } from "@/lib/permissions";
 import type { Role } from "@/lib/types";
 import { signOut, switchCounterUser, switchPizzeria } from "./actions";
 import { CounterGuard } from "./counter-guard";
@@ -35,6 +36,7 @@ export function Shell({
   pizzeria,
   stores,
   access,
+  perms,
   counter,
   children,
 }: {
@@ -43,6 +45,8 @@ export function Shell({
   pizzeria: { id: string; name: string; slug: string; accepting: boolean };
   stores: { id: string; name: string }[];
   access: Record<Area, readonly Role[]>;
+  /** O que o dono liberou para o gerente (some do menu o que não foi liberado). */
+  perms: ManagerPerms;
   /** Entrou pelo computador do balcão (com PIN): mostra "Trocar de pessoa" e sai sozinho sem uso. */
   counter?: { code: string; idle: number } | null;
   children: ReactNode;
@@ -53,7 +57,7 @@ export function Shell({
   const noOverview = role === "driver" || role === "kitchen" || role === "attendant";
   // "Ver minha loja" é para quem atende o cliente ou cuida do cardápio.
   const driver = role === "driver" || role === "kitchen";
-  const items = NAV.filter((n) => (n.area ? access[n.area].includes(role) : !noOverview));
+  const items = NAV.filter((n) => (n.area ? areaAllowed(role, perms, n.area, access) : !noOverview));
 
   return (
     <div className="min-h-dvh md:flex">

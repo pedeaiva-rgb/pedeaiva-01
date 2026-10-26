@@ -33,7 +33,7 @@ const MANAGER: Role[] = ["owner", "manager"];
 const time = timeSP;
 const minutesAgo = minutesSince;
 
-export function OrdersBoard({ pizzeriaId, pizzeriaName, role }: { pizzeriaId: string; pizzeriaName: string; role: Role }) {
+export function OrdersBoard({ pizzeriaId, pizzeriaName, role, canRefund }: { pizzeriaId: string; pizzeriaName: string; role: Role; canRefund: boolean }) {
   const sb = browserClient();
   const [period, setPeriod] = useState<Period>("abertos");
   const [orders, setOrders] = useState<Row[] | null>(null);
@@ -148,7 +148,7 @@ export function OrdersBoard({ pizzeriaId, pizzeriaName, role }: { pizzeriaId: st
           ))}
         </div>
       )}
-      {selected && <OrderDrawer o={selected} role={role} storeName={pizzeriaName} onClose={() => setOpenId(null)} onChanged={load} />}
+      {selected && <OrderDrawer o={selected} role={role} canRefund={canRefund} storeName={pizzeriaName} onClose={() => setOpenId(null)} onChanged={load} />}
     </>
   );
 }
@@ -185,7 +185,7 @@ function OrderCard({ o, now, onOpen }: { o: Row; now: number; onOpen: () => void
 
 type Event = { id: string; from_status: OrderStatus | null; to_status: OrderStatus; note: string | null; created_at: string };
 
-function OrderDrawer({ o, role, storeName, onClose, onChanged }: { o: Row; role: Role; storeName: string; onClose: () => void; onChanged: () => Promise<void> }) {
+function OrderDrawer({ o, role, canRefund, storeName, onClose, onChanged }: { o: Row; role: Role; canRefund: boolean; storeName: string; onClose: () => void; onChanged: () => Promise<void> }) {
   const sb = browserClient();
   const [busy, setBusy] = useState(false);
   const [events, setEvents] = useState<Event[]>([]);
@@ -352,6 +352,7 @@ function OrderDrawer({ o, role, storeName, onClose, onChanged }: { o: Row; role:
           )}
           {o.payment_status === "recebido" &&
             (MANAGER.includes(role) || role === "cashier") &&
+            canRefund &&
             (refundReason == null ? (
               <button className="text-xs font-bold text-muted hover:text-danger" onClick={() => setRefundReason("")}>
                 Estornar pagamento
