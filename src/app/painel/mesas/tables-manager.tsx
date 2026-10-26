@@ -129,26 +129,37 @@ export function TablesManager({
           <p className="text-xs text-muted">
             Cole um QR em cada mesa. O cliente aponta a câmera do celular, vê o cardápio, chama o garçom e pede a conta, sem baixar aplicativo e sem cadastro.
           </p>
-          <Toggle
-            checked={ordering}
-            disabled={busy}
-            label="Cliente pode fazer o pedido pelo celular"
-            onChange={(v) => run(() => sb.from("pizzerias").update({ qr_ordering: v }).eq("id", pizzeriaId), v ? "Pedido pelo QR ligado" : "QR só mostra o cardápio").then((ok) => ok && setOrdering(v))}
-          />
+          <div className="flex items-start justify-between gap-3 rounded-2xl border p-3">
+            <div>
+              <p className="font-bold">Cliente faz o pedido pelo celular</p>
+              <p className="text-xs text-muted">
+                {ordering ? "Ligado: o cliente escolhe os itens e envia o pedido pelo QR." : "Desligado: o QR só mostra o cardápio; o pedido é feito com o garçom."}
+              </p>
+            </div>
+            <Toggle
+              checked={ordering}
+              disabled={busy}
+              label="Cliente faz o pedido pelo celular"
+              onChange={(v) => run(() => sb.from("pizzerias").update({ qr_ordering: v }).eq("id", pizzeriaId), v ? "Pedido pelo QR ligado" : "QR só mostra o cardápio").then((ok) => ok && setOrdering(v))}
+            />
+          </div>
           {ordering && (
-            <>
+            <div className="flex items-start justify-between gap-3 rounded-2xl border p-3">
+              <div>
+                <p className="font-bold">Pedido vai direto para a cozinha</p>
+                <p className="text-xs text-muted">
+                  {autoConfirm
+                    ? "Ligado: se a equipe já abriu a mesa, o pedido do cliente sai direto na cozinha. Em mesa livre, a equipe ainda confirma (evita pedido de brincadeira com foto do QR)."
+                    : "Desligado: cada pedido do cliente aparece piscando na tela de Mesas e só vai para a cozinha quando alguém da equipe confirma."}
+                </p>
+              </div>
               <Toggle
                 checked={autoConfirm}
                 disabled={busy}
-                label="Mesa já aberta: pedido do cliente vai direto para a cozinha"
-                onChange={(v) => run(() => sb.from("pizzerias").update({ qr_auto_confirm: v }).eq("id", pizzeriaId), v ? "Confirmação automática ligada" : "A equipe confirma cada pedido").then((ok) => ok && setAutoConfirm(v))}
+                label="Pedido vai direto para a cozinha"
+                onChange={(v) => run(() => sb.from("pizzerias").update({ qr_auto_confirm: v }).eq("id", pizzeriaId), v ? "Pedido direto para a cozinha ligado" : "A equipe confirma cada pedido").then((ok) => ok && setAutoConfirm(v))}
               />
-              <p className="text-xs text-muted">
-                {autoConfirm
-                  ? "Quando a equipe já abriu a mesa, o pedido do cliente sai direto na cozinha. Em mesa livre, a equipe ainda confirma (evita pedido de brincadeira com foto do QR)."
-                  : "Cada pedido do cliente aparece piscando na tela de Mesas e só vai para a cozinha quando alguém da equipe confirma."}
-              </p>
-            </>
+            </div>
           )}
           <Link href="/painel/mesas/qr" target="_blank" className="btn-ghost inline-flex">
             <QrCode className="h-4 w-4" /> Imprimir os QR Codes
