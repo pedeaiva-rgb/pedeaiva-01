@@ -23,6 +23,7 @@ export default async function Overview() {
   if (t.role === "driver") redirect("/painel/entregador");
   if (t.role === "kitchen") redirect("/painel/cozinha");
   if (t.role === "attendant") redirect("/painel/pedidos");
+  if (t.role === "waiter") redirect("/painel/mesas");
   const pz = t.pizzeria;
   // Gerente sem "ver o faturamento" vê a operação, mas não os valores.
   const money = t.role !== "manager" || t.perms.faturamento;

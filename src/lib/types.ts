@@ -1,8 +1,8 @@
 /** Formato das linhas do banco (supabase/migrations). */
-export type Role = "owner" | "manager" | "cashier" | "attendant" | "kitchen" | "driver";
+export type Role = "owner" | "manager" | "cashier" | "attendant" | "waiter" | "kitchen" | "driver";
 export type OrderStatus = "novo" | "confirmado" | "preparo" | "pronto" | "saiu" | "entregue" | "cancelado";
 export type Fulfillment = "entrega" | "retirada";
-export type Channel = "site" | "balcao" | "telefone" | "whatsapp";
+export type Channel = "site" | "balcao" | "telefone" | "whatsapp" | "mesa";
 export type PaymentMethod = "pix" | "cartao" | "dinheiro";
 export type PaymentStatus = "pendente" | "recebido" | "estornado";
 export type HalfPricing = "mais_caro" | "media";
@@ -22,6 +22,8 @@ export type Pizzeria = {
   allow_pickup: boolean;
   min_order_cents: number;
   prep_minutes: number;
+  /** Taxa de serviço padrão das mesas (%). */
+  service_fee_pct: number;
   half_pricing: HalfPricing;
   delivery_mode: DeliveryMode;
   delivery_fee_cents: number;
@@ -126,6 +128,8 @@ export type Order = {
   eta_min: number | null;
   eta_max: number | null;
   courier_id: string | null;
+  /** Conta da mesa (rodada do salão). */
+  tab_id?: string | null;
   dispatched_at: string | null;
   delivered_at: string | null;
   courier_pay_cents: number | null;

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { Bike, ChefHat, ExternalLink, KeyRound, LayoutDashboard, LogOut, Menu, Monitor, Pizza, Receipt, Settings, Ticket, Users, Wallet, X, Zap } from "lucide-react";
+import { Bike, ChefHat, ExternalLink, KeyRound, LayoutDashboard, LogOut, Menu, Monitor, Pizza, Receipt, Settings, Ticket, Users, UtensilsCrossed, Wallet, X, Zap } from "lucide-react";
 import { PavLogo } from "@/components/brand/logo";
 import { ROLE_LABEL } from "@/lib/order-labels";
 import { areaAllowed, type ManagerPerms } from "@/lib/permissions";
@@ -12,15 +12,16 @@ import { signOut, switchCounterUser, switchPizzeria } from "./actions";
 import { CounterGuard } from "./counter-guard";
 
 /** Funções que entram pelo balcão com PIN (cozinha tem o link dela; entregador usa o celular). */
-const COUNTER_ROLES: Role[] = ["owner", "manager", "cashier", "attendant"];
+const COUNTER_ROLES: Role[] = ["owner", "manager", "cashier", "attendant", "waiter"];
 
-type Area = "pedidos" | "cozinha" | "entregas" | "entregador" | "pdv" | "caixa" | "cardapio" | "configuracoes" | "cupons" | "equipe" | "automacoes";
+type Area = "pedidos" | "cozinha" | "entregas" | "entregador" | "mesas" | "pdv" | "caixa" | "cardapio" | "configuracoes" | "cupons" | "equipe" | "automacoes";
 const NAV: { href: string; label: string; icon: typeof Receipt; area?: Area }[] = [
   { href: "/painel", label: "Visão geral", icon: LayoutDashboard },
   { href: "/painel/pedidos", label: "Pedidos", icon: Receipt, area: "pedidos" },
   { href: "/painel/cozinha", label: "Cozinha", icon: ChefHat, area: "cozinha" },
   { href: "/painel/entregas", label: "Entregas", icon: Bike, area: "entregas" },
   { href: "/painel/entregador", label: "Minhas entregas", icon: Bike, area: "entregador" },
+  { href: "/painel/mesas", label: "Mesas", icon: UtensilsCrossed, area: "mesas" },
   { href: "/painel/pdv", label: "PDV / Balcão", icon: Monitor, area: "pdv" },
   { href: "/painel/caixa", label: "Caixa do dia", icon: Wallet, area: "caixa" },
   { href: "/painel/cardapio", label: "Cardápio", icon: Pizza, area: "cardapio" },
@@ -53,10 +54,10 @@ export function Shell({
 }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
-  // Entregador, cozinha e atendente vão direto para a tela de trabalho: sem a Visão geral (com valores da loja).
-  const noOverview = role === "driver" || role === "kitchen" || role === "attendant";
+  // Entregador, cozinha, atendente e garçom vão direto para a tela de trabalho: sem a Visão geral (com valores da loja).
+  const noOverview = role === "driver" || role === "kitchen" || role === "attendant" || role === "waiter";
   // "Ver minha loja" é para quem atende o cliente ou cuida do cardápio.
-  const driver = role === "driver" || role === "kitchen";
+  const driver = role === "driver" || role === "kitchen" || role === "waiter";
   const items = NAV.filter((n) => (n.area ? areaAllowed(role, perms, n.area, access) : !noOverview));
 
   return (

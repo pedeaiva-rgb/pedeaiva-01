@@ -39,12 +39,13 @@ export const PAYMENT_STATUS: Record<PaymentStatus, { label: string; cls: string 
   recebido: { label: "Recebido", cls: "bg-success-soft text-success" },
   estornado: { label: "Estornado", cls: "bg-sand text-muted" },
 };
-export const CHANNEL_LABEL: Record<Channel, string> = { site: "Loja online", balcao: "Balcão", telefone: "Telefone", whatsapp: "WhatsApp" };
+export const CHANNEL_LABEL: Record<Channel, string> = { site: "Loja online", balcao: "Balcão", telefone: "Telefone", whatsapp: "WhatsApp", mesa: "Mesa" };
 export const ROLE_LABEL: Record<Role, string> = {
   owner: "Proprietário",
   manager: "Gerente",
   cashier: "Caixa",
   attendant: "Atendente",
+  waiter: "Garçom",
   kitchen: "Cozinha",
   driver: "Entregador",
 };

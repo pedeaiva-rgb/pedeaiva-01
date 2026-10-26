@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import { DndContext, DragOverlay, MouseSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
-import { AlertTriangle, Bell, BellOff, Bike, CheckCircle2, ChefHat, Clock, Flame, GripVertical, Maximize2, Store, XCircle } from "lucide-react";
+import { AlertTriangle, Bell, BellOff, Bike, CheckCircle2, ChefHat, Clock, Flame, GripVertical, Maximize2, Store, UtensilsCrossed, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Spinner } from "@/components/ui";
 import { beep, minutesSince, timeSP } from "@/lib/beep";
@@ -13,6 +13,8 @@ import type { Order, OrderItem, OrderStatus } from "@/lib/types";
 /** A cozinha só precisa do que vai no forno: número, tipo, itens e observações. Nada de telefone ou endereço na tela. */
 export type Ticket = Pick<Order, "id" | "number" | "status" | "fulfillment" | "notes" | "created_at" | "updated_at"> & {
   order_items: Pick<OrderItem, "id" | "name" | "size_name" | "flavors" | "extras" | "note" | "qty">[];
+  /** Rodada do salão: "Mesa 4". */
+  table_name?: string | null;
   /** Cancelado depois de ir para a cozinha: quando e por quê. */
   cancel?: { at: string; note: string | null; from: OrderStatus } | null;
 };
@@ -44,7 +46,7 @@ export function PanelKitchen({ pizzeriaId, prepMinutes }: { pizzeriaId: string; 
   const load = useCallback(async () => {
     const since = new Date(Date.now() - 24 * 3600_000).toISOString();
     const cancelSince = new Date(Date.now() - CANCEL_HOURS * 3600_000).toISOString();
-    const cols = "id,number,status,fulfillment,notes,created_at,updated_at, order_items(id,name,size_name,flavors,extras,note,qty)";
+    const cols = "id,number,status,fulfillment,notes,created_at,updated_at,channel,customer_name, order_items(id,name,size_name,flavors,extras,note,qty)";
     const [q, c, n] = await Promise.all([
       sb.from("orders").select(cols).eq("pizzeria_id", pizzeriaId).in("status", KITCHEN).gte("created_at", since).order("created_at"),
       sb
@@ -63,7 +65,12 @@ export function PanelKitchen({ pizzeriaId, prepMinutes }: { pizzeriaId: string; 
       const ev = order_events.filter((e) => e.to_status === "cancelado").sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
       return ev && ev.from_status && KITCHEN.includes(ev.from_status) ? [{ ...t, cancel: { at: ev.created_at, note: ev.note, from: ev.from_status } }] : [];
     });
-    return { tickets: [...(q.data as Ticket[]), ...cancelled], waiting: n.count ?? 0 };
+    // Só o nome da mesa sai do pedido: nome e telefone de cliente não vão para a tela.
+    const slim = (t: Ticket & { channel?: string; customer_name?: string }) => {
+      const { channel, customer_name, ...rest } = t;
+      return { ...rest, table_name: channel === "mesa" ? customer_name : null };
+    };
+    return { tickets: [...(q.data as Ticket[]), ...cancelled].map(slim), waiting: n.count ?? 0 };
   }, [sb, pizzeriaId]);
   const move = useCallback(
     async (id: string, to: OrderStatus) => {
@@ -303,7 +310,8 @@ function TicketView({ t, now, prepMinutes, lifted = false, children }: { t: Tick
             {timeSP(t.created_at)} · <span className={late ? "text-tomato" : ""}>{mins} min</span>
           </p>
           <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-sand px-2 py-0.5 font-bold">
-            {t.fulfillment === "entrega" ? <Bike className="h-3 w-3" /> : <Store className="h-3 w-3" />} {t.fulfillment === "entrega" ? "Entrega" : "Retirada"}
+            {t.table_name ? <UtensilsCrossed className="h-3 w-3" /> : t.fulfillment === "entrega" ? <Bike className="h-3 w-3" /> : <Store className="h-3 w-3" />}{" "}
+            {t.table_name ?? (t.fulfillment === "entrega" ? "Entrega" : "Retirada")}
           </p>
         </div>
       </header>
@@ -335,7 +343,7 @@ function TicketView({ t, now, prepMinutes, lifted = false, children }: { t: Tick
       {children && <div className="mt-3">{children}</div>}
       {t.status === "pronto" && (
         <p className="mt-3 rounded-xl bg-success-soft p-3 text-center text-sm font-bold text-success">
-          Pronto · aguardando {t.fulfillment === "entrega" ? "entregador" : "retirada no balcão"}
+          Pronto · aguardando {t.table_name ? "garçom" : t.fulfillment === "entrega" ? "entregador" : "retirada no balcão"}
         </p>
       )}
       {!!NEXT[t.status] && !lifted && (

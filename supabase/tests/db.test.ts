@@ -824,3 +824,78 @@ describe("permissões do gerente", () => {
     expect(await fails(user(MGR), "select * from public.team_pins($1)", [pzA])).toMatch(/Sem permissão/);
   });
 });
+
+describe("controle de mesas", () => {
+  const WAITER = "00000000-0000-4000-8000-0000000000a9";
+  let m1 = "";
+  let m2 = "";
+  let tab = "";
+  const round = async (t: string, total = 5000) => {
+    const o = await createOrder(orderPayload({ channel: "mesa", customer_name: "Mesa 1", customer_phone: "", total_cents: total, subtotal_cents: total }));
+    await one(SERVICE, "select public.attach_round($1, $2)", [o.order_id, t]);
+    return o.order_id;
+  };
+  const totals = (t: string, who = OWNER_A) => one<{ r: { subtotal: number; service: number; total: number; paid: number; remaining: number } }>(user(who), "select public.tab_view($1) r", [t]).then((x) => x.r);
+
+  beforeAll(async () => {
+    await db.query("insert into auth.users (id, email) values ($1, 'garcom@x.com')", [WAITER]);
+    await one(user(OWNER_A), "select public.add_member_by_email($1, 'garcom@x.com', 'waiter', 'Gabi Garçom')", [pzA]);
+    m1 = (await one<{ id: string }>(user(OWNER_A), "insert into public.dining_tables (pizzeria_id, name) values ($1, '1') returning id", [pzA])).id;
+    m2 = (await one<{ id: string }>(user(OWNER_A), "insert into public.dining_tables (pizzeria_id, name, seats) values ($1, '2', 4) returning id", [pzA])).id;
+  });
+
+  it("garçom abre a mesa; rodada vai para a cozinha; taxa de 10%", async () => {
+    expect(await fails(user(WAITER), "insert into public.dining_tables (pizzeria_id, name) values ($1, '9') returning id", [pzA])).toMatch(/row-level security/);
+    expect(await fails(user(OWNER_A), "update public.dining_tables set seats = 0 where id = $1", [m2])).toMatch(/check constraint/);
+    tab = (await one<{ id: string }>(user(WAITER), "select public.open_tab($1, 4) id", [m1])).id;
+    expect(await fails(user(WAITER), "select public.open_tab($1)", [m1])).toMatch(/já está aberta/);
+    const r = await round(tab);
+    expect((await one<{ s: string }>(user(OWNER_A), "select status s from public.orders where id = $1", [r])).s).toBe("confirmado");
+    expect(await totals(tab, WAITER)).toMatchObject({ subtotal: 5000, service: 500, total: 5500, paid: 0, remaining: 5500 });
+  });
+
+  it("garçom não recebe nem fecha; cancela rodada e baixa taxa só com PIN do gerente", async () => {
+    await one(user(OWNER_A), "select public.set_my_pin($1, '7390')", [pzA]);
+    expect(await fails(user(WAITER), "select public.add_tab_payment($1, 'pix', 1000)", [tab])).toMatch(/Sem permissão para receber/);
+    const r2 = await round(tab, 2000);
+    expect(await fails(user(WAITER), "select public.transition_order($1, 'cancelado', 'pediu errado')", [r2])).toMatch(/PIN do gerente/);
+    await one(user(WAITER), "select public.request_approval($1, 'cancelar', '7390')", [r2]);
+    await one(user(WAITER), "select public.transition_order($1, 'cancelado', 'pediu errado')", [r2]);
+    expect(await fails(user(WAITER), "select public.set_tab_service($1, 0, 'cliente não quis')", [tab])).toMatch(/PIN do gerente/);
+    await one(user(WAITER), "select public.request_tab_approval($1, '7390')", [tab]);
+    await one(user(WAITER), "select public.set_tab_service($1, 0, 'cliente não quis')", [tab]);
+    expect(await totals(tab)).toMatchObject({ subtotal: 5000, service: 0, total: 5000 });
+    await one(user(OWNER_A), "select public.set_tab_service($1, 10)", [tab]);
+  });
+
+  it("juntar e trocar de mesa; pagamento em partes e fechamento", async () => {
+    const other = (await one<{ id: string }>(user(WAITER), "select public.open_tab($1, 2) id", [m2])).id;
+    await round(other, 3000);
+    await one(user(WAITER), "select public.merge_tabs($1, $2)", [other, tab]);
+    expect(await totals(tab)).toMatchObject({ subtotal: 8000, service: 800, total: 8800 });
+    await one(user(WAITER), "select public.move_tab($1, $2)", [tab, m2]);
+    expect(await fails(user(CASHIER_A), "select public.add_tab_payment($1, 'pix', 99999)", [tab])).toMatch(/passa do que falta/);
+    await one(user(CASHIER_A), "select public.add_tab_payment($1, 'pix', 4000)", [tab]);
+    expect(await fails(user(CASHIER_A), "select public.close_tab($1)", [tab])).toMatch(/Ainda falta receber/);
+    const r = await one<{ r: { remaining: number } }>(user(CASHIER_A), "select public.add_tab_payment($1, 'dinheiro', 4800, 5000) r", [tab]);
+    expect(r.r.remaining).toBe(0);
+    expect(await fails(user(CASHIER_A), "select public.close_tab($1)", [tab])).toMatch(/rodada na cozinha/);
+    for (const o of await rows<{ id: string }>(user(OWNER_A), "select id from public.orders where tab_id = $1 and status = 'confirmado'", [tab])) {
+      await one(user(OWNER_A), "select public.transition_order($1, 'pronto')", [o.id]);
+      await one(user(WAITER), "select public.transition_order($1, 'entregue')", [o.id]);
+    }
+    await one(user(CASHIER_A), "select public.close_tab($1)", [tab]);
+    expect((await one<{ s: string }>(user(OWNER_A), "select status s from public.tabs where id = $1", [tab])).s).toBe("fechada");
+    expect((await one<{ n: number }>(user(OWNER_A), "select count(*)::int n from public.payments where tab_id = $1 and change_cents = 200", [tab])).n).toBe(1);
+  });
+
+  it("garçom não mexe em pedido de delivery", async () => {
+    const o = await createOrder(orderPayload({ channel: "telefone", customer_phone: "71933331111" }));
+    await one(user(OWNER_A), "select public.transition_order($1, 'confirmado')", [o.order_id]);
+    await one(user(OWNER_A), "select public.transition_order($1, 'pronto')", [o.order_id]);
+    expect(await fails(user(WAITER), "select public.transition_order($1, 'entregue')", [o.order_id])).toMatch(/só mexe nos pedidos das mesas/);
+    // Nem enxerga: nome e telefone do cliente de delivery ficam fora da tela do garçom.
+    expect(await rows(user(WAITER), "select id from public.orders where id = $1", [o.order_id])).toHaveLength(0);
+    expect((await rows(user(WAITER), "select id from public.orders where tab_id is not null")).length).toBeGreaterThan(0);
+  });
+});

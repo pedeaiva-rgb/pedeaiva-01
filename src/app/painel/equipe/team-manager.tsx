@@ -36,11 +36,11 @@ export type JoinRequest = {
 };
 type Invite = { code: string; active: boolean; url: string };
 
-const ROLES: Role[] = ["owner", "manager", "cashier", "attendant", "kitchen", "driver"];
+const ROLES: Role[] = ["owner", "manager", "cashier", "attendant", "waiter", "kitchen", "driver"];
 /** Funções que o dono escolhe ao aprovar alguém (dono só por promoção, na lista). */
 const TEAM_ROLES = ROLES.filter((r) => r !== "owner");
 /** O que o gerente (com "cuidar da equipe") pode dar. */
-const BELOW_MANAGER: Role[] = ["cashier", "attendant", "kitchen", "driver"];
+const BELOW_MANAGER: Role[] = ["cashier", "attendant", "waiter", "kitchen", "driver"];
 
 /** Espelho das regras do banco (o banco é quem decide). */
 const PERMS: [string, Role[]][] = [
@@ -49,7 +49,8 @@ const PERMS: [string, Role[]][] = [
   ["Preparo (em preparo / pronto)", ["owner", "manager", "cashier", "kitchen"]],
   ["Saída e entrega", ["owner", "manager", "cashier", "attendant", "driver"]],
   ["Lançar pedidos no PDV", ["owner", "manager", "cashier", "attendant"]],
-  ["Receber pagamento", ["owner", "manager", "cashier"]],
+  ["Mesas: abrir, lançar rodadas e servir", ["owner", "manager", "cashier", "attendant", "waiter"]],
+  ["Receber pagamento e fechar a conta da mesa", ["owner", "manager", "cashier"]],
   ["Estornar pagamento", ["owner", "manager"]],
   ["Cardápio, cupons e configurações", ["owner", "manager"]],
   ["Equipe", ["owner"]],
