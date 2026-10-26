@@ -1,28 +1,38 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, QrCode, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Drawer, Spinner, Toggle } from "@/components/ui";
 import { dbError } from "@/lib/db-error";
 import { browserClient } from "@/lib/supabase/client";
 import type { DiningTable } from "./mesas-board";
 
-/** Cadastro das mesas (várias de uma vez) e a taxa de serviço padrão da loja. */
+/** Novo código do QR (o antigo para de funcionar). */
+const newQrToken = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+
+/** Cadastro das mesas (várias de uma vez), a taxa de serviço padrão e o QR Code das mesas. */
 export function TablesManager({
   pizzeriaId,
   tables,
   defaultFee,
+  qr,
   onClose,
   onChanged,
 }: {
   pizzeriaId: string;
   tables: DiningTable[];
   defaultFee: number;
+  qr: { ordering: boolean; autoConfirm: boolean };
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {
   const sb = browserClient();
+  const router = useRouter();
+  const [ordering, setOrdering] = useState(qr.ordering);
+  const [autoConfirm, setAutoConfirm] = useState(qr.autoConfirm);
   const [busy, setBusy] = useState(false);
   const [from, setFrom] = useState(tables.length ? "" : "1");
   const [to, setTo] = useState(tables.length ? "" : "10");
@@ -38,6 +48,7 @@ export function TablesManager({
     if (error) toast.error(dbError(error));
     else {
       toast.success(ok);
+      router.refresh();
       await onChanged();
     }
     return !error;
@@ -84,7 +95,7 @@ export function TablesManager({
             </label>
             <label className="block">
               <span className="mb-1 block text-xs font-bold text-muted">Lugares em cada</span>
-              <input className="field" inputMode="numeric" placeholder="4" value={seats} onChange={(e) => setSeats(e.target.value.replace(/D/g, "").slice(0, 2))} />
+              <input className="field" inputMode="numeric" placeholder="4" value={seats} onChange={(e) => setSeats(e.target.value.replace(/\D/g, "").slice(0, 2))} />
             </label>
           </div>
           <p className="text-xs text-muted">
@@ -109,6 +120,39 @@ export function TablesManager({
               Salvar
             </button>
           </div>
+        </section>
+
+        <section className="space-y-3">
+          <h3 className="flex items-center gap-1.5 font-bold">
+            <QrCode className="h-4 w-4" /> QR Code das mesas
+          </h3>
+          <p className="text-xs text-muted">
+            Cole um QR em cada mesa. O cliente aponta a câmera do celular, vê o cardápio, chama o garçom e pede a conta, sem baixar aplicativo e sem cadastro.
+          </p>
+          <Toggle
+            checked={ordering}
+            disabled={busy}
+            label="Cliente pode fazer o pedido pelo celular"
+            onChange={(v) => run(() => sb.from("pizzerias").update({ qr_ordering: v }).eq("id", pizzeriaId), v ? "Pedido pelo QR ligado" : "QR só mostra o cardápio").then((ok) => ok && setOrdering(v))}
+          />
+          {ordering && (
+            <>
+              <Toggle
+                checked={autoConfirm}
+                disabled={busy}
+                label="Mesa já aberta: pedido do cliente vai direto para a cozinha"
+                onChange={(v) => run(() => sb.from("pizzerias").update({ qr_auto_confirm: v }).eq("id", pizzeriaId), v ? "Confirmação automática ligada" : "A equipe confirma cada pedido").then((ok) => ok && setAutoConfirm(v))}
+              />
+              <p className="text-xs text-muted">
+                {autoConfirm
+                  ? "Quando a equipe já abriu a mesa, o pedido do cliente sai direto na cozinha. Em mesa livre, a equipe ainda confirma (evita pedido de brincadeira com foto do QR)."
+                  : "Cada pedido do cliente aparece piscando na tela de Mesas e só vai para a cozinha quando alguém da equipe confirma."}
+              </p>
+            </>
+          )}
+          <Link href="/painel/mesas/qr" target="_blank" className="btn-ghost inline-flex">
+            <QrCode className="h-4 w-4" /> Imprimir os QR Codes
+          </Link>
         </section>
 
         <section className="space-y-2">
@@ -144,7 +188,7 @@ function TableRow({ table: t, areas, busy, run }: { table: DiningTable; areas: s
         ))}
       </select>
       <label className="flex items-center gap-1 text-xs text-muted">
-        <input aria-label={`Lugares da Mesa ${t.name}`} className="field !w-14 !py-1.5 text-center" inputMode="numeric" placeholder="–" value={seats} onChange={(e) => setSeats(e.target.value.replace(/D/g, "").slice(0, 2))} />
+        <input aria-label={`Lugares da Mesa ${t.name}`} className="field !w-14 !py-1.5 text-center" inputMode="numeric" placeholder="–" value={seats} onChange={(e) => setSeats(e.target.value.replace(/\D/g, "").slice(0, 2))} />
         lugares
       </label>
       {dirty && (
@@ -159,6 +203,18 @@ function TableRow({ table: t, areas, busy, run }: { table: DiningTable; areas: s
         disabled={busy}
         onChange={(v) => run(() => sb.from("dining_tables").update({ active: v }).eq("id", t.id), v ? `Mesa ${t.name} ativada` : `Mesa ${t.name} desativada`)}
       />
+      <button
+        aria-label={`Trocar o QR Code da Mesa ${t.name}`}
+        title="Trocar o QR Code (o antigo para de funcionar)"
+        className="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-sand"
+        disabled={busy}
+        onClick={() =>
+          confirm(`Trocar o QR Code da Mesa ${t.name}? O QR impresso hoje para de funcionar e você precisa imprimir o novo.`) &&
+          run(() => sb.from("dining_tables").update({ qr_token: newQrToken() }).eq("id", t.id), `QR Code da Mesa ${t.name} trocado: imprima o novo`)
+        }
+      >
+        <RefreshCw className="h-4 w-4" />
+      </button>
       <button aria-label={`Apagar a Mesa ${t.name}`} className="grid h-8 w-8 place-items-center rounded-full text-danger hover:bg-sand" disabled={busy} onClick={remove}>
         <Trash2 className="h-4 w-4" />
       </button>

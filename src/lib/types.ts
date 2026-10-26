@@ -24,6 +24,9 @@ export type Pizzeria = {
   prep_minutes: number;
   /** Taxa de serviço padrão das mesas (%). */
   service_fee_pct: number;
+  /** QR Code das mesas: cliente pode pedir pelo celular; e se o pedido de mesa já aberta vai direto para a cozinha. */
+  qr_ordering?: boolean;
+  qr_auto_confirm?: boolean;
   half_pricing: HalfPricing;
   delivery_mode: DeliveryMode;
   delivery_fee_cents: number;

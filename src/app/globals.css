@@ -200,3 +200,19 @@
     color: #000;
   }
 }
+
+/* Folha dos QR Codes das mesas (A4): na impressão aparece só ela. */
+@media print {
+  #qr-sheet,
+  #qr-sheet * {
+    visibility: visible;
+  }
+  #qr-sheet {
+    position: absolute;
+    inset: 0 0 auto 0;
+    color: #000;
+  }
+  .qr-card {
+    break-inside: avoid;
+  }
+}

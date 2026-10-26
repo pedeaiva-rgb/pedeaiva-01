@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useEffectEvent, useState } from "react";
-import { ArrowRightLeft, Ban, Check, ChefHat, Clock, KeyRound, Plus, Printer, Settings2, Users, Wallet } from "lucide-react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import { ArrowRightLeft, Ban, Bell, BellOff, BellRing, Check, ChefHat, Clock, KeyRound, Plus, Printer, Receipt, Settings2, Users, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { Drawer, Empty, PageHeader, Spinner } from "@/components/ui";
 import { MoneyInput } from "@/components/ui/money-input";
-import { minutesSince, timeSP } from "@/lib/beep";
+import { beep, minutesSince, timeSP } from "@/lib/beep";
 import { dbError } from "@/lib/db-error";
 import { brl, centsToInput, parseMoney } from "@/lib/money";
 import { PAYMENT_LABEL, STATUS } from "@/lib/order-labels";
@@ -14,16 +14,19 @@ import type { Menu, Order, OrderItem, PaymentMethod, Role } from "@/lib/types";
 import { RoundPicker } from "./round-picker";
 import { TablesManager } from "./tables-manager";
 
-export type DiningTable = { id: string; name: string; area: string; active: boolean; sort: number; seats: number | null };
+export type DiningTable = { id: string; name: string; area: string; active: boolean; sort: number; seats: number | null; qr_token: string };
 const seatsLabel = (n: number) => `${n} lugar${n === 1 ? "" : "es"}`;
 type Tab = { id: string; table_id: string; guests: number | null; service_fee_pct: number; service_note: string | null; opened_at: string };
 type Round = Order & { order_items: OrderItem[] };
 type Pay = { id: string; tab_id: string; kind: "recebimento" | "estorno"; method: PaymentMethod; amount_cents: number; change_cents: number | null; created_at: string };
 type Totals = { subtotal: number; service: number; total: number; paid: number; remaining: number };
+/** Chamado do cliente pelo QR: "chamar garçom" ou "pedir a conta". */
+type Call = { id: string; table_id: string; kind: "garcom" | "conta"; created_at: string };
+const CALL_LABEL = { garcom: "Chamando o garçom", conta: "Pediu a conta" } as const;
 
-/** Mesma conta de public.tab_totals (o banco confere de novo ao receber e fechar). */
+/** Mesma conta de public.tab_totals (o banco confere de novo ao receber e fechar). Pedido do QR sem confirmação não entra. */
 function totalsOf(tab: Tab, rounds: Round[], pays: Pay[]): Totals {
-  const subtotal = rounds.filter((r) => r.status !== "cancelado").reduce((s, r) => s + r.total_cents, 0);
+  const subtotal = rounds.filter((r) => r.status !== "cancelado" && r.status !== "novo").reduce((s, r) => s + r.total_cents, 0);
   const service = Math.round((subtotal * Number(tab.service_fee_pct)) / 100);
   const paid = pays.reduce((s, p) => s + (p.kind === "recebimento" ? p.amount_cents : -p.amount_cents), 0);
   return { subtotal, service, total: subtotal + service, paid, remaining: subtotal + service - paid };
@@ -38,6 +41,7 @@ export function MesasBoard({
   role,
   canManage,
   defaultFee,
+  qr,
 }: {
   pizzeriaId: string;
   pizzeriaName: string;
@@ -45,12 +49,18 @@ export function MesasBoard({
   role: Role;
   canManage: boolean;
   defaultFee: number;
+  qr: { ordering: boolean; autoConfirm: boolean };
 }) {
   const sb = browserClient();
   const [tables, setTables] = useState<DiningTable[] | null>(null);
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [rounds, setRounds] = useState<Round[]>([]);
   const [pays, setPays] = useState<Pay[]>([]);
+  const [calls, setCalls] = useState<Call[]>([]);
+  const [sound, setSound] = useState(false);
+  const audio = useRef<AudioContext | null>(null);
+  /** O que já tocou o aviso (pedido do QR esperando e chamados), para só avisar o que é novo. */
+  const seen = useRef<Set<string> | null>(null);
   const [failed, setFailed] = useState(false);
   const [openTable, setOpenTable] = useState<string | null>(null);
   const [picker, setPicker] = useState<string | null>(null);
@@ -60,11 +70,12 @@ export function MesasBoard({
   const [group, setGroup] = useState("");
 
   const fetchAll = useCallback(async () => {
-    const [t, o] = await Promise.all([
-      sb.from("dining_tables").select("id, name, area, active, sort, seats").eq("pizzeria_id", pizzeriaId),
+    const [t, o, c] = await Promise.all([
+      sb.from("dining_tables").select("id, name, area, active, sort, seats, qr_token").eq("pizzeria_id", pizzeriaId),
       sb.from("tabs").select("id, table_id, guests, service_fee_pct, service_note, opened_at").eq("pizzeria_id", pizzeriaId).eq("status", "aberta"),
+      sb.from("table_calls").select("id, table_id, kind, created_at").eq("pizzeria_id", pizzeriaId).is("resolved_at", null).order("created_at"),
     ]);
-    if (t.error || o.error) return null;
+    if (t.error || o.error || c.error) return null;
     const ids = (o.data as Tab[]).map((x) => x.id);
     const [r, p] = ids.length
       ? await Promise.all([
@@ -73,8 +84,25 @@ export function MesasBoard({
         ])
       : [{ data: [], error: null }, { data: [], error: null }];
     if (r.error || p.error) return null;
-    return { tables: (t.data as DiningTable[]).sort(byName), tabs: o.data as Tab[], rounds: r.data as Round[], pays: p.data as Pay[] };
+    return { tables: (t.data as DiningTable[]).sort(byName), tabs: o.data as Tab[], rounds: r.data as Round[], pays: p.data as Pay[], calls: c.data as Call[] };
   }, [sb, pizzeriaId]);
+  const announce = useEffectEvent(() => {
+    if (!tables) return;
+    const name = (tableId: string) => tables.find((t) => t.id === tableId)?.name ?? "?";
+    const tableOfTab = new Map(tabs.map((t) => [t.id, t.table_id]));
+    const alerts = [
+      ...rounds.filter((r) => r.status === "novo").map((r) => ({ key: `o:${r.id}`, text: `Mesa ${name(tableOfTab.get(r.tab_id!) ?? "")}: pedido novo pelo QR Code` })),
+      ...calls.map((c) => ({ key: `c:${c.id}`, text: `Mesa ${name(c.table_id)}: ${CALL_LABEL[c.kind].toLowerCase()}` })),
+    ];
+    // Na primeira carga só registra o que já existia (não toca alarme ao abrir a tela).
+    const first = seen.current == null;
+    seen.current ??= new Set();
+    const fresh = alerts.filter((a) => !seen.current!.has(a.key));
+    for (const a of fresh) seen.current.add(a.key);
+    if (first || !fresh.length) return;
+    for (const a of fresh) toast.warning(a.text, { duration: 10_000 });
+    if (sound && audio.current) beep(audio.current);
+  });
   const apply = useCallback((d: Awaited<ReturnType<typeof fetchAll>>) => {
     setFailed(!d);
     if (!d) return;
@@ -82,9 +110,11 @@ export function MesasBoard({
     setTabs(d.tabs);
     setRounds(d.rounds);
     setPays(d.pays);
+    setCalls(d.calls);
   }, []);
   const load = useCallback(async () => apply(await fetchAll()), [apply, fetchAll]);
   const reload = useEffectEvent(() => void load());
+  useEffect(() => announce(), [tables, tabs, rounds, calls]);
 
   useEffect(() => {
     let alive = true;
@@ -95,10 +125,11 @@ export function MesasBoard({
   }, [fetchAll, apply]);
 
   useEffect(() => {
-    // Cozinha mudou uma rodada (pronto) ou outra pessoa mexeu numa mesa.
+    // Cozinha mudou uma rodada (pronto), cliente pediu pelo QR ou chamou, ou outra pessoa mexeu numa mesa.
     const ch = sb
       .channel(`mesas-${pizzeriaId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `pizzeria_id=eq.${pizzeriaId}` }, () => reload())
+      .on("postgres_changes", { event: "*", schema: "public", table: "table_calls", filter: `pizzeria_id=eq.${pizzeriaId}` }, () => reload())
       .subscribe();
     const poll = setInterval(reload, 10_000);
     const tick = setInterval(() => setNow(Date.now()), 30_000);
@@ -137,6 +168,15 @@ export function MesasBoard({
   const fitIds = new Set(fits.map((t) => t.id));
   const selected = tables.find((t) => t.id === openTable) ?? null;
   const pickerTab = tabs.find((t) => t.id === picker);
+  const callsOf = (tableId: string) => calls.filter((c) => c.table_id === tableId);
+  const toggleSound = () => {
+    if (!sound) {
+      audio.current ??= new AudioContext();
+      void audio.current.resume();
+      beep(audio.current);
+    }
+    setSound(!sound);
+  };
 
   return (
     <>
@@ -144,11 +184,16 @@ export function MesasBoard({
         title="Mesas"
         subtitle={visible.length ? `${busy} ocupada${busy === 1 ? "" : "s"} · ${visible.length - busy} livre${visible.length - busy === 1 ? "" : "s"}` : undefined}
         actions={
-          canManage && (
-            <button className="btn-ghost !py-2 text-sm" onClick={() => setManaging(true)}>
-              <Settings2 className="h-4 w-4" /> Cadastrar mesas
+          <>
+            <button onClick={toggleSound} className={sound ? "btn !py-2 text-sm" : "btn-ghost !py-2 text-sm"}>
+              {sound ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />} {sound ? "Som ligado" : "Ligar som"}
             </button>
-          )
+            {canManage && (
+              <button className="btn-ghost !py-2 text-sm" onClick={() => setManaging(true)}>
+                <Settings2 className="h-4 w-4" /> Cadastrar mesas
+              </button>
+            )}
+          </>
         }
       />
 
@@ -169,7 +214,7 @@ export function MesasBoard({
         <div className="space-y-6">
           <label className="flex flex-wrap items-center gap-2 rounded-2xl bg-surface p-3 text-sm font-bold shadow-[var(--shadow-soft)]">
             <Users className="h-4 w-4" /> Fila de espera: grupo de
-            <input aria-label="Pessoas no grupo" className="field !w-16 !py-1 text-center" inputMode="numeric" placeholder="0" value={group} onChange={(e) => setGroup(e.target.value.replace(/D/g, "").slice(0, 2))} />
+            <input aria-label="Pessoas no grupo" className="field !w-16 !py-1 text-center" inputMode="numeric" placeholder="0" value={group} onChange={(e) => setGroup(e.target.value.replace(/\D/g, "").slice(0, 2))} />
             pessoas
             {need > 0 && <span className="font-normal text-muted">{fits.length ? `cabe em: ${fits.map((t) => `Mesa ${t.name}`).join(", ")}` : "nenhuma mesa livre com lugares suficientes"}</span>}
             {need > 0 && visible.some((t) => t.seats == null) && (
@@ -181,6 +226,7 @@ export function MesasBoard({
             <Legend cls="border-dende bg-dende-soft" label="Ocupada" />
             <Legend cls="border-success bg-success-soft" label="Pronto para servir" />
             <Legend cls="border-info bg-info-soft" label="Pagando" />
+            <Legend cls="border-tomato bg-tomato-soft" label="Cliente chamando ou pedido do QR" />
           </div>
           {areas.map((area) => (
             <section key={area}>
@@ -193,7 +239,13 @@ export function MesasBoard({
                     const rs = tab ? roundsOf(tab.id) : [];
                     const tot = tab ? totalsOf(tab, rs, paysOf(tab.id)) : null;
                     const ready = rs.some((r) => r.status === "pronto");
-                    const cls = !tab
+                    const waiting = rs.filter((r) => r.status === "novo").length;
+                    const tc = callsOf(t.id);
+                    // Cliente esperando (pedido do QR ou chamado) vem antes de tudo.
+                    const alert = waiting > 0 || tc.length > 0;
+                    const cls = alert
+                      ? "border-tomato bg-tomato-soft animate-pulse"
+                      : !tab
                       ? "border-line bg-surface"
                       : ready
                         ? "border-success bg-success-soft"
@@ -227,6 +279,20 @@ export function MesasBoard({
                               ) : null}
                             </span>
                             {ready && <span className="block font-bold text-success">Pronto p/ servir</span>}
+                            {waiting > 0 && <span className="block font-bold text-tomato-deep">Pedido do QR: confirmar</span>}
+                            {tc.map((c) => (
+                              <span key={c.id} className="flex items-center gap-1 font-bold text-tomato-deep">
+                                <BellRing className="h-3 w-3" /> {CALL_LABEL[c.kind]}
+                              </span>
+                            ))}
+                          </span>
+                        ) : tc.length ? (
+                          <span className="text-xs">
+                            {tc.map((c) => (
+                              <span key={c.id} className="flex items-center gap-1 font-bold text-tomato-deep">
+                                <BellRing className="h-3 w-3" /> {CALL_LABEL[c.kind]}
+                              </span>
+                            ))}
                           </span>
                         ) : (
                           <span className="text-xs text-muted">{fits[0]?.id === t.id ? <b className="text-tomato">Melhor mesa p/ o grupo</b> : "Livre"}</span>
@@ -247,6 +313,7 @@ export function MesasBoard({
           tab={tabOf.get(selected.id) ?? null}
           rounds={tabOf.has(selected.id) ? roundsOf(tabOf.get(selected.id)!.id) : []}
           pays={tabOf.has(selected.id) ? paysOf(tabOf.get(selected.id)!.id) : []}
+          calls={callsOf(selected.id)}
           tables={visible}
           tabOf={tabOf}
           role={role}
@@ -269,7 +336,7 @@ export function MesasBoard({
           }}
         />
       )}
-      {managing && <TablesManager pizzeriaId={pizzeriaId} tables={tables} defaultFee={defaultFee} onClose={() => setManaging(false)} onChanged={load} />}
+      {managing && <TablesManager pizzeriaId={pizzeriaId} tables={tables} defaultFee={defaultFee} qr={qr} onClose={() => setManaging(false)} onChanged={load} />}
     </>
   );
 }
@@ -287,6 +354,7 @@ function TableDrawer({
   tab,
   rounds,
   pays,
+  calls,
   tables,
   tabOf,
   role,
@@ -300,6 +368,7 @@ function TableDrawer({
   tab: Tab | null;
   rounds: Round[];
   pays: Pay[];
+  calls: Call[];
   tables: DiningTable[];
   tabOf: Map<string, Tab>;
   role: Role;
@@ -329,6 +398,7 @@ function TableDrawer({
     return (
       <Drawer title={`Mesa ${table.name}`} onClose={onClose}>
         <div className="space-y-4">
+          <CallsBox calls={calls} busy={busy} act={act} />
           <p className="text-sm text-muted">Mesa livre{table.seats ? ` para ${seatsLabel(table.seats)}` : ""}. Abra a conta quando o cliente sentar.</p>
           <label className="block">
             <span className="mb-1 block text-sm font-bold">Quantas pessoas? (opcional)</span>
@@ -356,6 +426,7 @@ function TableDrawer({
       tab={tab}
       rounds={rounds}
       pays={pays}
+      calls={calls}
       tables={tables}
       tabOf={tabOf}
       role={role}
@@ -374,6 +445,7 @@ function OpenTab({
   tab,
   rounds,
   pays,
+  calls,
   tables,
   tabOf,
   role,
@@ -388,6 +460,7 @@ function OpenTab({
   tab: Tab;
   rounds: Round[];
   pays: Pay[];
+  calls: Call[];
   tables: DiningTable[];
   tabOf: Map<string, Tab>;
   role: Role;
@@ -407,6 +480,7 @@ function OpenTab({
   // Parte de cada um sobre o total (quem já pagou não muda a parte dos outros).
   const share = Math.ceil(tot.total / n);
   const inKitchen = rounds.some((r) => r.status === "confirmado" || r.status === "preparo");
+  const waiting = rounds.some((r) => r.status === "novo");
   const otherOpen = tables.filter((t) => t.id !== table.id && tabOf.has(t.id));
 
   return (
@@ -422,6 +496,8 @@ function OpenTab({
             </span>
           ) : null}
         </div>
+
+        <CallsBox calls={calls} busy={busy} act={act} />
 
         <button className="btn w-full !py-3" onClick={() => onLaunch(tab.id)}>
           <ChefHat className="h-4 w-4" /> Lançar itens
@@ -481,15 +557,15 @@ function OpenTab({
             <Printer className="h-4 w-4" /> Imprimir pré-conta
           </button>
           {tot.subtotal === 0 ? (
-            <button className="btn-ghost" disabled={busy} onClick={() => act(() => sb.rpc("close_tab", { _tab: tab.id }), `Mesa ${table.name} liberada`).then((ok) => ok && onClose())}>
+            <button className="btn-ghost" disabled={busy || waiting} onClick={() => act(() => sb.rpc("close_tab", { _tab: tab.id }), `Mesa ${table.name} liberada`).then((ok) => ok && onClose())}>
               <Check className="h-4 w-4" /> Liberar mesa (sem consumo)
             </button>
           ) : (
             canReceive && (
               <button
                 className="btn"
-                disabled={busy || tot.remaining > 0 || inKitchen}
-                title={inKitchen ? "Ainda tem rodada na cozinha" : tot.remaining > 0 ? "Ainda falta receber" : undefined}
+                disabled={busy || tot.remaining > 0 || inKitchen || waiting}
+                title={waiting ? "Confirme ou recuse o pedido do cliente" : inKitchen ? "Ainda tem rodada na cozinha" : tot.remaining > 0 ? "Ainda falta receber" : undefined}
                 onClick={() => act(() => sb.rpc("close_tab", { _tab: tab.id }), `Conta da Mesa ${table.name} fechada`).then((ok) => ok && onClose())}
               >
                 <Check className="h-4 w-4" /> Fechar conta e liberar
@@ -497,6 +573,7 @@ function OpenTab({
             )
           )}
         </div>
+        {waiting && <p className="text-xs text-warning">Tem pedido do cliente esperando: confirme ou recuse antes de fechar.</p>}
         {canReceive && tot.subtotal > 0 && tot.remaining <= 0 && inKitchen && <p className="text-xs text-warning">Ainda tem rodada na cozinha: espere ficar pronta ou cancele.</p>}
 
         <MoveTable tab={tab} table={table} tables={tables} tabOf={tabOf} busy={busy} act={act} onGoTo={onGoTo} />
@@ -506,6 +583,26 @@ function OpenTab({
         <PreBill storeName={storeName} table={table} tab={tab} rounds={rounds} tot={tot} people={n} share={share} />
       </div>
     </Drawer>
+  );
+}
+
+/** Chamados do cliente nesta mesa, com o botão de "atendido". */
+function CallsBox({ calls, busy, act }: { calls: Call[]; busy: boolean; act: (fn: () => PromiseLike<{ error: unknown }>, ok?: string) => Promise<boolean> }) {
+  const sb = browserClient();
+  if (!calls.length) return null;
+  return (
+    <div className="space-y-2">
+      {calls.map((c) => (
+        <div key={c.id} className="flex items-center justify-between gap-2 rounded-2xl border-2 border-tomato bg-tomato-soft p-3">
+          <span className="flex items-center gap-2 font-bold text-tomato-deep">
+            {c.kind === "conta" ? <Receipt className="h-4 w-4" /> : <BellRing className="h-4 w-4" />} {CALL_LABEL[c.kind]} · {timeSP(c.created_at)}
+          </span>
+          <button className="btn !px-3 !py-1.5 text-xs" disabled={busy} onClick={() => act(() => sb.rpc("resolve_call", { _call: c.id }), "Chamado atendido")}>
+            <Check className="h-3.5 w-3.5" /> Atendido
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -539,25 +636,30 @@ function RoundCard({
   const [pin, setPin] = useState("");
   const [dest, setDest] = useState("");
   const open = r.status !== "cancelado" && r.status !== "entregue";
+  // Pedido do cliente pelo QR: confirmar manda para a cozinha; recusar não pede PIN (nada foi preparado).
+  const guest = r.status === "novo";
 
   const cancel = async () => {
-    if (needsApproval) {
+    if (needsApproval && !guest) {
       const { data, error } = await sb.rpc("request_approval", { _order: r.id, _action: "cancelar", _pin: pin });
       setPin("");
       if (error) return void toast.error(dbError(error));
       toast.message(`Autorizado por ${data as string}`);
     }
-    if (await act(() => sb.rpc("transition_order", { _order: r.id, _to: "cancelado", _note: reason }), `Rodada #${r.number} cancelada`)) setMode("none");
+    if (await act(() => sb.rpc("transition_order", { _order: r.id, _to: "cancelado", _note: reason }), guest ? `Pedido #${r.number} recusado` : `Rodada #${r.number} cancelada`)) setMode("none");
   };
 
   return (
-    <div className="rounded-2xl border p-3">
+    <div className={`rounded-2xl border p-3 ${guest ? "border-2 border-tomato bg-tomato-soft/40" : ""}`}>
       <div className="mb-1 flex items-center justify-between gap-2">
         <span className="font-bold">
           #{r.number} · {timeSP(r.created_at)}
         </span>
-        <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${STATUS[r.status].cls}`}>{r.status === "entregue" ? "Servido" : STATUS[r.status].label}</span>
+        <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${guest ? "bg-tomato text-paper" : STATUS[r.status].cls}`}>
+          {guest ? "Pedido do cliente (QR)" : r.status === "entregue" ? "Servido" : STATUS[r.status].label}
+        </span>
       </div>
+      {guest && r.customer_name.includes("·") && <p className="mb-1 text-xs font-bold">{r.customer_name.split("·").slice(1).join("·").trim()}</p>}
       <ul className={`space-y-0.5 text-xs ${r.status === "cancelado" ? "text-muted line-through" : ""}`}>
         {r.order_items.map((i) => (
           <li key={i.id} className="flex justify-between gap-2">
@@ -572,7 +674,17 @@ function RoundCard({
         ))}
       </ul>
       {r.notes && <p className="mt-1 text-[11px] text-muted">Obs.: {r.notes}</p>}
-      {open && mode === "none" && (
+      {guest && mode === "none" && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button className="btn !px-3 !py-1.5 text-xs" disabled={busy} onClick={() => act(() => sb.rpc("transition_order", { _order: r.id, _to: "confirmado", _note: null }), `Pedido #${r.number} confirmado e enviado para a cozinha`)}>
+            <ChefHat className="h-3.5 w-3.5" /> Confirmar e mandar para a cozinha
+          </button>
+          <button className="btn-ghost !px-3 !py-1.5 text-xs text-danger" onClick={() => setMode("cancel")}>
+            <Ban className="h-3.5 w-3.5" /> Recusar
+          </button>
+        </div>
+      )}
+      {open && !guest && mode === "none" && (
         <div className="mt-2 flex flex-wrap gap-2">
           {r.status === "pronto" && (
             <button className="btn !px-3 !py-1.5 text-xs" disabled={busy} onClick={() => act(() => sb.rpc("transition_order", { _order: r.id, _to: "entregue", _note: null }), `Rodada #${r.number} servida`)}>
@@ -613,11 +725,11 @@ function RoundCard({
       )}
       {mode === "cancel" && (
         <div className="mt-2 space-y-2">
-          <input className="field !py-2 text-xs" placeholder="Motivo do cancelamento" maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} />
-          {needsApproval && <PinField value={pin} onChange={setPin} />}
+          <input className="field !py-2 text-xs" placeholder={guest ? "Motivo (ex.: pedido repetido, cliente desistiu)" : "Motivo do cancelamento"} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} />
+          {needsApproval && !guest && <PinField value={pin} onChange={setPin} />}
           <div className="flex gap-2">
-            <button className="btn !bg-danger !px-3 !py-1.5 text-xs" disabled={busy || reason.trim().length < 3 || (needsApproval && pin.length < 4)} onClick={cancel}>
-              Cancelar rodada
+            <button className="btn !bg-danger !px-3 !py-1.5 text-xs" disabled={busy || reason.trim().length < 3 || (needsApproval && !guest && pin.length < 4)} onClick={cancel}>
+              {guest ? "Recusar pedido" : "Cancelar rodada"}
             </button>
             <button className="text-xs font-bold text-muted" onClick={() => setMode("none")}>
               Voltar

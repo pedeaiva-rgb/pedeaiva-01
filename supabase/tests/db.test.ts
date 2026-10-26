@@ -899,3 +899,73 @@ describe("controle de mesas", () => {
     expect((await rows(user(WAITER), "select id from public.orders where tab_id is not null")).length).toBeGreaterThan(0);
   });
 });
+
+describe("mesas pelo QR Code", () => {
+  const WAITER2 = "00000000-0000-4000-8000-0000000000b9";
+  let mesa = "";
+  const qrOrder = async (total = 3000) => {
+    const o = await createOrder(orderPayload({ channel: "mesa", customer_name: "Mesa 7", customer_phone: "", total_cents: total, subtotal_cents: total }));
+    const r = await one<{ r: { tab_id: string; confirmed: boolean } }>(SERVICE, "select public.attach_qr_round($1, $2) r", [o.order_id, mesa]);
+    return { id: o.order_id, ...r.r };
+  };
+  const status = (id: string) => one<{ s: string }>(user(OWNER_A), "select status s from public.orders where id = $1", [id]).then((x) => x.s);
+
+  beforeAll(async () => {
+    await db.query("insert into auth.users (id, email) values ($1, 'garcom2@x.com')", [WAITER2]);
+    await one(user(OWNER_A), "select public.add_member_by_email($1, 'garcom2@x.com', 'waiter', 'Gil Garçom')", [pzA]);
+    mesa = (await one<{ id: string }>(user(OWNER_A), "insert into public.dining_tables (pizzeria_id, name, seats) values ($1, '7', 4) returning id", [pzA])).id;
+  });
+
+  it("só o servidor liga pedido e chamado pelo QR; visitante não lê as mesas", async () => {
+    expect(await fails(ANON, "select public.qr_call($1, 'garcom')", [mesa])).toMatch(/permission denied/);
+    expect(await fails(user(WAITER2), "select public.attach_qr_round($1, $2)", [mesa, mesa])).toMatch(/permission denied/);
+    expect(await fails(ANON, "select qr_token from public.dining_tables")).toMatch(/permission denied/);
+  });
+
+  it("pedido em mesa livre abre a conta e espera confirmação; fora da conta até confirmar", async () => {
+    const a = await qrOrder();
+    expect(a.confirmed).toBe(false);
+    expect(await status(a.id)).toBe("novo");
+    expect((await one<{ r: { subtotal: number } }>(user(WAITER2), "select public.tab_view($1) r", [a.tab_id])).r.subtotal).toBe(0);
+    expect(await fails(user(WAITER2), "select public.close_tab($1)", [a.tab_id])).toMatch(/esperando confirmação/);
+    // Garçom confirma; outro pedido ele recusa sem PIN (não chegou à cozinha).
+    await one(user(WAITER2), "select public.transition_order($1, 'confirmado')", [a.id]);
+    expect((await one<{ r: { subtotal: number } }>(user(WAITER2), "select public.tab_view($1) r", [a.tab_id])).r.subtotal).toBe(3000);
+    const b = await qrOrder(1000);
+    expect(b.tab_id).toBe(a.tab_id);
+    await one(user(WAITER2), "select public.transition_order($1, 'cancelado', 'pedido repetido')", [b.id]);
+    // Depois de confirmado, cancelar volta a pedir o PIN.
+    expect(await fails(user(WAITER2), "select public.transition_order($1, 'cancelado', 'desistiu')", [a.id])).toMatch(/PIN do gerente/);
+  });
+
+  it("limite de pedidos esperando e confirmação automática na mesa aberta", async () => {
+    for (let i = 0; i < 3; i++) await qrOrder(500);
+    const o = await createOrder(orderPayload({ channel: "mesa", customer_name: "Mesa 7", customer_phone: "", total_cents: 500, subtotal_cents: 500 }));
+    expect(await fails(SERVICE, "select public.attach_qr_round($1, $2)", [o.order_id, mesa])).toMatch(/Espere a equipe/);
+    await db.query("update public.orders set status = 'cancelado' where id = $1", [o.order_id]);
+    for (const r of await rows<{ id: string }>(user(OWNER_A), "select o.id from public.orders o join public.tabs t on t.id = o.tab_id where t.table_id = $1 and o.status = 'novo'", [mesa])) {
+      await one(user(WAITER2), "select public.transition_order($1, 'cancelado', 'teste limite')", [r.id]);
+    }
+    expect(await rows(user(WAITER2), "update public.pizzerias set qr_auto_confirm = true where id = $1 returning id", [pzA])).toHaveLength(0);
+    await one(user(OWNER_A), "update public.pizzerias set qr_auto_confirm = true where id = $1 returning id", [pzA]);
+    const c = await qrOrder(2000);
+    expect(c.confirmed).toBe(true);
+    expect(await status(c.id)).toBe("confirmado");
+    await one(user(OWNER_A), "update public.pizzerias set qr_auto_confirm = false where id = $1 returning id", [pzA]);
+  });
+
+  it("chamar garçom não duplica; fechar a conta limpa os chamados", async () => {
+    await one(SERVICE, "select public.qr_call($1, 'garcom')", [mesa]);
+    await one(SERVICE, "select public.qr_call($1, 'garcom')", [mesa]);
+    await one(SERVICE, "select public.qr_call($1, 'conta')", [mesa]);
+    const calls = await rows<{ id: string; kind: string }>(user(WAITER2), "select id, kind from public.table_calls where table_id = $1 and resolved_at is null", [mesa]);
+    expect(calls.map((c) => c.kind).sort()).toEqual(["conta", "garcom"]);
+    await one(user(WAITER2), "select public.resolve_call($1)", [calls.find((c) => c.kind === "garcom")!.id]);
+    const tab = (await one<{ id: string }>(user(OWNER_A), "select id from public.tabs where table_id = $1 and status = 'aberta'", [mesa])).id;
+    for (const r of await rows<{ id: string }>(user(OWNER_A), "select id from public.orders where tab_id = $1 and status = 'confirmado'", [tab])) {
+      await one(user(OWNER_A), "select public.transition_order($1, 'cancelado', 'fim do teste')", [r.id]);
+    }
+    await one(user(WAITER2), "select public.close_tab($1)", [tab]);
+    expect((await one<{ n: number }>(user(OWNER_A), "select count(*)::int n from public.table_calls where table_id = $1 and resolved_at is null", [mesa])).n).toBe(0);
+  });
+});
