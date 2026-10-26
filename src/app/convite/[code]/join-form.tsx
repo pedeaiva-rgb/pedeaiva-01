@@ -138,7 +138,7 @@ export function JoinForm({ code, email }: { code: string; email: string | null }
       <button className="btn w-full" disabled={pending}>
         {pending && <Spinner className="h-4 w-4" />} Pedir acesso
       </button>
-      <p className="text-xs text-muted">Seus dados ficam visíveis só para o responsável pela pizzaria.</p>
+      <p className="text-xs text-muted">Seus dados ficam visíveis só para o responsável pela loja.</p>
     </form>
   );
 }

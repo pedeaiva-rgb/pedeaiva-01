@@ -33,7 +33,7 @@ export async function requestJoin(input: JoinInput): Promise<JoinResult> {
   if (!(await getUser())) {
     if (!d.email || !d.password) return { ok: false, error: "Informe e-mail e senha para criar seu acesso." };
     const { data: info } = await sb.rpc("invite_info", { _code: d.code });
-    if (!(info as unknown[] | null)?.length) return { ok: false, error: "Este link de convite não vale mais. Peça um link novo para a pizzaria." };
+    if (!(info as unknown[] | null)?.length) return { ok: false, error: "Este link de convite não vale mais. Peça um link novo para a loja." };
     const { error: createError } = await adminClient().auth.admin.createUser({
       email: d.email,
       password: d.password,

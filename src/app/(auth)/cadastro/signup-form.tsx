@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -52,6 +53,17 @@ export function SignupForm() {
       <button className="btn w-full" disabled={busy}>
         {busy && <Spinner className="h-4 w-4" />} Criar conta
       </button>
+      <p className="text-center text-xs text-muted">
+        Ao criar a conta, você concorda com os{" "}
+        <Link href="/sobre/termos" target="_blank" className="underline">
+          Termos de uso
+        </Link>{" "}
+        e a{" "}
+        <Link href="/sobre/privacidade" target="_blank" className="underline">
+          Política de privacidade
+        </Link>
+        .
+      </p>
     </form>
   );
 }

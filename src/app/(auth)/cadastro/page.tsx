@@ -12,7 +12,7 @@ export default function SignupPage() {
   return (
     <AuthCard
       title="Crie sua conta"
-      subtitle="Depois de confirmar o e-mail, você cria a loja da sua pizzaria."
+      subtitle="Depois de confirmar o e-mail, você cria a sua loja."
       footer={
         <>
           Já tem conta?{" "}

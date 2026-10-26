@@ -34,8 +34,15 @@ export default async function StoreLayout({ params, children }: LayoutProps<"/[s
         </div>
       </header>
       <main className="mx-auto max-w-5xl px-4 pt-5">{children}</main>
-      <footer className="mx-auto mt-12 flex max-w-5xl items-center justify-center gap-2 px-4 text-xs text-muted">
-        <PavSymbol size={20} /> Loja feita com <Link href="/" className="font-bold text-ink">Pede aí e vá</Link>
+      <footer className="mx-auto mt-12 flex max-w-5xl flex-wrap items-center justify-center gap-2 px-4 text-xs text-muted">
+        <PavSymbol size={20} /> Loja feita com <Link href="/" className="font-bold text-ink">Pede aí, vá</Link>
+        <span aria-hidden="true">·</span>
+        <Link href="/sobre/termos" className="hover:underline">
+          Termos
+        </Link>
+        <Link href="/sobre/privacidade" className="hover:underline">
+          Privacidade
+        </Link>
       </footer>
     </div>
   );

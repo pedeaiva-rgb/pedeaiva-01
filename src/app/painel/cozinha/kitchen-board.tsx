@@ -330,7 +330,7 @@ function TicketView({ t, now, prepMinutes, lifted = false, children }: { t: Tick
         {t.order_items.map((i: ItemRow) => (
           <li key={i.id} className="border-t pt-2 first:border-0 first:pt-0">
             <p className="text-lg leading-tight font-extrabold">
-              {i.qty}× {i.flavors.length > 1 ? "Pizza meio a meio" : i.name}
+              {i.qty}× {i.flavors.length > 1 ? "Meio a meio" : i.name}
               {i.size_name && <span className="ml-1.5 rounded-md bg-charcoal px-1.5 py-0.5 align-middle text-xs text-cream">{i.size_name}</span>}
             </p>
             {i.flavors.length > 1 && <p className="text-base font-semibold">{i.flavors.map((f) => `${fraction(f.fraction)} ${f.name}`).join("  +  ")}</p>}

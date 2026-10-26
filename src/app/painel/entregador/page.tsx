@@ -20,7 +20,7 @@ export default async function EntregadorPage() {
       <Panel title="Minhas entregas">
         <p className="text-sm">
           {courier ? "Seu cadastro de entregador está desativado nesta loja." : "Seu cadastro de entregador ainda não foi criado nesta loja."} Fale com o responsável
-          pela pizzaria.
+          pela loja.
         </p>
       </Panel>
     );

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { Bike, ChefHat, ExternalLink, KeyRound, LayoutDashboard, LogOut, Menu, Monitor, Pizza, Receipt, Settings, Ticket, Users, UtensilsCrossed, Wallet, X, Zap } from "lucide-react";
+import { Bike, ChefHat, ExternalLink, KeyRound, LayoutDashboard, LogOut, Menu, Monitor, BookOpen, Receipt, Settings, Ticket, Users, UtensilsCrossed, Wallet, X, Zap } from "lucide-react";
 import { PavLogo } from "@/components/brand/logo";
 import { ROLE_LABEL } from "@/lib/order-labels";
 import { areaAllowed, type ManagerPerms } from "@/lib/permissions";
@@ -39,7 +39,7 @@ const NAV: { title: string | null; items: NavItem[] }[] = [
   {
     title: "Loja online",
     items: [
-      { href: "/painel/cardapio", label: "Cardápio", icon: Pizza, area: "cardapio" },
+      { href: "/painel/cardapio", label: "Cardápio", icon: BookOpen, area: "cardapio" },
       { href: "/painel/cupons", label: "Cupons", icon: Ticket, area: "cupons" },
       { href: "/painel/automacoes", label: "WhatsApp e automações", icon: Zap, area: "automacoes" },
     ],
@@ -96,7 +96,7 @@ export function Shell({
         </div>
         {stores.length > 1 ? (
           <select
-            aria-label="Pizzaria"
+            aria-label="Loja"
             className="mb-4 w-full rounded-xl border border-graphite bg-graphite px-3 py-2 text-sm font-bold"
             value={pizzeria.id}
             onChange={(e) => switchPizzeria(e.target.value)}

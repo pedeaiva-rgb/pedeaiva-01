@@ -123,7 +123,7 @@ function ProductForm({ menu, product, onClose }: { menu: Menu; product: Product 
     name: product?.name ?? "",
     description: product?.description ?? "",
     category_id: product?.category_id ?? menu.categories[0]?.id ?? "",
-    is_pizza: product?.is_pizza ?? true,
+    is_pizza: product?.is_pizza ?? false,
     price: product ? centsToInput(product.price_cents) : "",
     available: product?.available ?? true,
     featured: product?.featured ?? false,
@@ -253,7 +253,7 @@ function ProductForm({ menu, product, onClose }: { menu: Menu; product: Product 
         </Field>
         <div className="grid grid-cols-2 gap-2">
           <button type="button" data-active={f.is_pizza} onClick={() => setF({ ...f, is_pizza: true })} className="chip !justify-center !rounded-2xl">
-            Pizza (preço por tamanho)
+            Por tamanho e sabores
           </button>
           <button type="button" data-active={!f.is_pizza} onClick={() => setF({ ...f, is_pizza: false })} className="chip !justify-center !rounded-2xl">
             Item com preço único
@@ -348,7 +348,7 @@ function Categories({ menu }: { menu: Menu }) {
           if (await run(() => sb.from("categories").insert({ pizzeria_id: menu.pizzeria.id, name: name.trim(), sort: list.length }), "Categoria criada")) setName("");
         }}
       >
-        <input className="field" placeholder="Nova categoria (ex.: Pizzas doces)" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
+        <input className="field" placeholder="Nova categoria (ex.: Lanches, Bebidas)" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
         <button className="btn !px-4" disabled={!name.trim() || busy}>
           <Plus className="h-4 w-4" />
         </button>
@@ -364,7 +364,7 @@ function Sizes({ menu }: { menu: Menu }) {
   const [f, setF] = useState({ name: "", description: "", max: "1" });
   const list = menu.sizes;
   return (
-    <Panel title="Tamanhos de pizza" action={<span className="text-xs text-muted">Sabores: quantos cabem em meio a meio</span>}>
+    <Panel title="Tamanhos" action={<span className="text-xs text-muted">Para produtos por tamanho (pizza, açaí…). Sabores: quantos cabem em meio a meio</span>}>
       <ul className="divide-y">
         {list.map((s) => (
           <li key={s.id} className="grid grid-cols-[1fr_1fr_90px_auto_auto] items-center gap-2 py-2">
@@ -393,7 +393,7 @@ function Sizes({ menu }: { menu: Menu }) {
             <Toggle checked={s.active} label={`${s.name} ativo`} onChange={(v) => run(() => sb.from("sizes").update({ active: v }).eq("id", s.id))} />
             <button
               aria-label={`Apagar ${s.name}`}
-              onClick={() => confirm(`Apagar o tamanho ${s.name}? Os preços das pizzas nesse tamanho também serão apagados.`) && run(() => sb.from("sizes").delete().eq("id", s.id), "Tamanho apagado")}
+              onClick={() => confirm(`Apagar o tamanho ${s.name}? Os preços dos produtos nesse tamanho também serão apagados.`) && run(() => sb.from("sizes").delete().eq("id", s.id), "Tamanho apagado")}
               className="grid h-9 w-9 place-items-center rounded-full text-muted hover:text-danger"
             >
               <Trash2 className="h-4 w-4" />
@@ -471,7 +471,7 @@ function Extras({ menu }: { menu: Menu }) {
               onCommit={(c) => run(() => sb.from("extras").update({ price_cents: c }).eq("id", x.id), "Preço salvo")}
             />
             <label className="hidden items-center gap-2 text-xs font-semibold sm:flex">
-              <input type="checkbox" checked={x.pizza_only} onChange={(e) => run(() => sb.from("extras").update({ pizza_only: e.target.checked }).eq("id", x.id))} /> Só para pizza
+              <input type="checkbox" checked={x.pizza_only} onChange={(e) => run(() => sb.from("extras").update({ pizza_only: e.target.checked }).eq("id", x.id))} /> Só para produtos por tamanho
             </label>
             <Toggle checked={x.available} label={`${x.name} disponível`} onChange={(v) => run(() => sb.from("extras").update({ available: v }).eq("id", x.id))} />
             <button
@@ -503,7 +503,7 @@ function Extras({ menu }: { menu: Menu }) {
           <Plus className="h-4 w-4" />
         </button>
         <label className="col-span-3 flex items-center gap-2 text-xs font-semibold">
-          <input type="checkbox" checked={f.pizza_only} onChange={(e) => setF({ ...f, pizza_only: e.target.checked })} /> Só para pizza (bordas, coberturas)
+          <input type="checkbox" checked={f.pizza_only} onChange={(e) => setF({ ...f, pizza_only: e.target.checked })} /> Só para produtos por tamanho (bordas, coberturas)
         </label>
       </form>
     </Panel>

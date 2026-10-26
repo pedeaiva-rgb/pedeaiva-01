@@ -12,13 +12,13 @@ const MODEL = "google/gemini-2.5-flash";
 const aiSchema = z.object({
   items: z.array(
     z.object({
-      kind: z.enum(["pizza", "item", "extra"]).describe("pizza = preço por tamanho; item = preço único (bebida, sobremesa, entrada); extra = adicional ou borda"),
-      category: z.string().describe("Categoria do cardápio (ex.: Pizzas, Bebidas, Sobremesas, Entradas). Para extra, use \"Adicionais\"."),
+      kind: z.enum(["pizza", "item", "extra"]).describe("pizza = produto com preço por tamanho (pizza, açaí, marmita P/M/G...); item = preço único (lanche, prato, bebida, sobremesa, entrada); extra = adicional ou borda"),
+      category: z.string().describe("Categoria do cardápio (ex.: Lanches, Pizzas, Pratos, Bebidas, Sobremesas). Para extra, use \"Adicionais\"."),
       name: z.string(),
       description: z.string().describe("Ingredientes ou detalhes, se houver; senão string vazia"),
       price: z.number().nullable().describe("Preço em reais para item ou extra; null se não estiver escrito"),
-      prices: z.array(z.object({ size: z.string(), price: z.number() })).describe("Para pizza: preço em reais em cada tamanho; vazio nos outros"),
-      pizza_only: z.boolean().describe("Para extra: true se só vale para pizza (bordas, coberturas)"),
+      prices: z.array(z.object({ size: z.string(), price: z.number() })).describe("Para produto por tamanho: preço em reais em cada tamanho; vazio nos outros"),
+      pizza_only: z.boolean().describe("Para extra: true se só vale para produtos por tamanho (bordas, coberturas)"),
     }),
   ),
 });
@@ -62,10 +62,10 @@ export async function parseMenuText(pizzeriaId: string, text: string): Promise<R
       model: MODEL,
       output: Output.object({ schema: aiSchema }),
       system: [
-        "Você lê cardápios de pizzaria em português do Brasil e transforma em itens estruturados.",
+        "Você lê cardápios de restaurantes, lanchonetes, pizzarias e deliveries em português do Brasil e transforma em itens estruturados.",
         "Regras: nunca invente preço; se um preço não estiver escrito, use null (ou deixe o tamanho de fora).",
         "Preços em reais, com vírgula decimal convertida para número (42,90 → 42.9).",
-        `Os tamanhos de pizza desta loja são: ${sizeList.map((s) => s.name).join(", ") || "(nenhum)"}. Use exatamente esses nomes no campo size.`,
+        `Os tamanhos desta loja (para produtos por tamanho) são: ${sizeList.map((s) => s.name).join(", ") || "(nenhum)"}. Use exatamente esses nomes no campo size.`,
         "Ignore títulos, observações e linhas que não sejam produtos.",
       ].join("\n"),
       prompt: clean,

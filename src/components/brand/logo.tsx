@@ -1,5 +1,5 @@
 /**
- * Logo oficial "Pede aí e vá" (vetorial).
+ * Logo oficial "Pede aí, vá" (vetorial).
  * Símbolo: uma fatia de pizza cuja ponta vira um caminho para a frente (pedido → cozinha → entrega).
  */
 const TOMATO = "#E4472D";
@@ -43,21 +43,21 @@ export function PavLogo({
   const ink = tone === "light" ? "text-charcoal" : "text-cream";
   if (compact) {
     return (
-      <span role="img" aria-label="Pede aí e vá" className={`inline-flex items-center gap-2 ${className}`}>
+      <span role="img" aria-label="Pede aí, vá" className={`inline-flex items-center gap-2 ${className}`}>
         <PavSymbol size={34} tone={tone} />
         <span className={`font-brand text-[13px] leading-[0.95] font-extrabold tracking-tight ${ink}`}>
-          Pede aí
+          Pede aí,
           <br />
-          <span className="text-tomato">e vá</span>
+          <span className="text-tomato">vá</span>
         </span>
       </span>
     );
   }
   return (
-    <span role="img" aria-label="Pede aí e vá" className={`inline-flex items-center gap-2.5 ${className}`}>
+    <span role="img" aria-label="Pede aí, vá" className={`inline-flex items-center gap-2.5 ${className}`}>
       <PavSymbol size={38} tone={tone} />
       <span className={`font-brand text-[22px] font-extrabold tracking-tight ${ink}`}>
-        Pede aí <span className="text-tomato">e vá</span>
+        Pede aí, <span className="text-tomato">vá</span>
       </span>
     </span>
   );

@@ -127,12 +127,12 @@ export function TeamManager({
   };
 
   const whatsappText = invite
-    ? `Olá! Use este link para entrar na equipe da ${pizzeriaName} no Pede aí e vá: ${invite.url}`
+    ? `Olá! Use este link para entrar na equipe da ${pizzeriaName} no Pede aí, vá: ${invite.url}`
     : "";
 
   return (
     <>
-      <PageHeader title="Equipe" subtitle="Quem acessa o painel desta pizzaria e o que cada um pode fazer." />
+      <PageHeader title="Equipe" subtitle="Quem acessa o painel desta loja e o que cada um pode fazer." />
       <div className="grid gap-4 lg:grid-cols-[1fr_380px]">
         <div className="space-y-4">
           <Panel title={`Pedidos de acesso${pending.length ? ` (${pending.length})` : ""}`}>

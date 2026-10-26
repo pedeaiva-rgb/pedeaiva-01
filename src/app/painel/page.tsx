@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { AlertTriangle, Bike, CheckCircle2, ChefHat, Circle, Clock, Flame, Monitor, Pizza, Receipt, Timer, TrendingDown, TrendingUp, Wallet, XCircle } from "lucide-react";
+import { AlertTriangle, Banknote, Bike, CheckCircle2, ChefHat, Circle, Clock, Flame, Monitor, Receipt, Timer, TrendingDown, TrendingUp, Wallet, XCircle } from "lucide-react";
 import { Panel } from "@/components/ui";
 import { AutoRefresh } from "@/app/pedido/[token]/auto-refresh";
 import { avgDelivery, avgPrep, change, lateOrders, sales, serverNow, topItems, type DashEvent, type DashItem, type DashOrder } from "@/lib/dashboard";
@@ -75,7 +75,10 @@ export default async function Overview() {
   const priced = new Set(((prices.data ?? []) as { product_id: string }[]).map((p) => p.product_id));
   const checklist = [
     { done: prods.length > 0, label: "Cadastrar os produtos do cardápio", href: "/painel/cardapio" },
-    { done: prods.filter((p) => p.is_pizza).every((p) => priced.has(p.id)) && prods.some((p) => p.is_pizza), label: "Dar preço às pizzas em cada tamanho", href: "/painel/cardapio" },
+    // Só aparece para quem vende produto montado por tamanho (pizza, açaí...).
+    ...(prods.some((p) => p.is_pizza)
+      ? [{ done: prods.filter((p) => p.is_pizza).every((p) => priced.has(p.id)), label: "Dar preço em cada tamanho aos produtos por tamanho", href: "/painel/cardapio" }]
+      : []),
     { done: !!pz.phone, label: "Informar telefone e endereço da loja", href: "/painel/configuracoes" },
     { done: Object.keys((pz.opening_hours as object) ?? {}).length > 0, label: "Definir o horário de funcionamento", href: "/painel/configuracoes" },
   ];
@@ -94,7 +97,7 @@ export default async function Overview() {
 
       {/* Vendas */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi label="Vendido hoje" value={hide(brl(today.revenue))} icon={Pizza} delta={money ? revChange : null} hint={money && prev.revenue ? `semana passada até agora: ${brl(prev.revenue)}` : "pedidos confirmados"} />
+        <Kpi label="Vendido hoje" value={hide(brl(today.revenue))} icon={Banknote} delta={money ? revChange : null} hint={money && prev.revenue ? `semana passada até agora: ${brl(prev.revenue)}` : "pedidos confirmados"} />
         <Kpi label="Pedidos" value={String(today.count)} icon={Receipt} delta={countChange} hint={`${today.cancelled} cancelado(s)${prev.count ? ` · semana passada: ${prev.count}` : ""}`} />
         <Kpi label="Ticket médio" value={hide(brl(today.avgTicket))} icon={TrendingUp} hint={money && prev.avgTicket ? `semana passada: ${brl(prev.avgTicket)}` : "valor médio por pedido"} />
         <Kpi label="Recebido hoje" value={can(t.role, "pdv") && money ? brl(received) : "—"} icon={Wallet} hint="registrado no caixa, já descontados estornos" />
@@ -304,7 +307,7 @@ export default async function Overview() {
   );
 }
 
-function Kpi({ label, value, icon: Icon, hint, delta }: { label: string; value: string; icon: typeof Pizza; hint: string; delta?: number | null }) {
+function Kpi({ label, value, icon: Icon, hint, delta }: { label: string; value: string; icon: typeof Banknote; hint: string; delta?: number | null }) {
   return (
     <div className="card p-4">
       <div className="flex items-center justify-between">

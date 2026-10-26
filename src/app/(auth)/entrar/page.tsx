@@ -14,7 +14,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/entrar">) 
   return (
     <AuthCard
       title="Entrar no painel"
-      subtitle="Acesso para donos e equipe das pizzarias."
+      subtitle="Acesso para donos e equipe das lojas."
       footer={
         <>
           Ainda não tem conta?{" "}

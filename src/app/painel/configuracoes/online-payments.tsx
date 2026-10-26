@@ -105,7 +105,7 @@ export function OnlinePayments({ info }: { info: OnlinePaymentsInfo }) {
                 <FlaskConical className="h-4 w-4" /> Usar o simulador (só no computador de teste)
               </button>
             )}
-            <p className="text-xs text-muted">Você entra na sua conta do Mercado Pago e autoriza o Pede aí e vá a gerar os Pix da loja. Ninguém vê a sua senha.</p>
+            <p className="text-xs text-muted">Você entra na sua conta do Mercado Pago e autoriza o Pede aí, vá a gerar os Pix da loja. Ninguém vê a sua senha.</p>
           </div>
         ) : (
           <p className="text-xs text-muted">Só o dono da loja conecta a conta que recebe o dinheiro.</p>
@@ -133,7 +133,7 @@ export function OnlinePayments({ info }: { info: OnlinePaymentsInfo }) {
         </div>
 
         <ul className="space-y-1 text-xs text-muted">
-          <li>• Taxa do Mercado Pago no Pix (cerca de 0,99%: confira na sua conta). O Pede aí e vá não cobra nada a mais.</li>
+          <li>• Taxa do Mercado Pago no Pix (cerca de 0,99%: confira na sua conta). O Pede aí, vá não cobra nada a mais.</li>
           <li>• Sem cobrança de fim de semana e sem fidelidade: desligue quando quiser.</li>
           <li>• O cliente tem 15 minutos para pagar. Pedido com Pix pago cancelado: o estorno devolve o dinheiro pelo próprio sistema.</li>
         </ul>

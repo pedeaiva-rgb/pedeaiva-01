@@ -8,7 +8,7 @@ import { Drawer, Spinner } from "@/components/ui";
 import { brl } from "@/lib/money";
 import { importMenuItems, parseMenuText, type ImportRow } from "./import-actions";
 
-const KIND_LABEL = { pizza: "Pizza", item: "Item", extra: "Adicional" } as const;
+const KIND_LABEL = { pizza: "Por tamanho", item: "Item", extra: "Adicional" } as const;
 const EXAMPLE = `Pizzas (Broto / Média / Grande / Família)
 Calabresa - calabresa, cebola e orégano - 31,90 / 42,90 / 54,90 / 69,90
 Margherita - mussarela de búfala e manjericão - 32,90 / 44,90 / 56,90 / 72,90
@@ -59,7 +59,7 @@ export function ImportDrawer({ pizzeriaId, onClose }: { pizzeriaId: string; onCl
       {!rows ? (
         <div className="space-y-3">
           <p className="text-sm text-muted">
-            Cole a lista do cardápio do jeito que você tiver: pizzas com o preço de cada tamanho, bebidas, sobremesas e adicionais. A IA separa tudo e mostra para você conferir antes de cadastrar. Nada é salvo sem sua confirmação.
+            Cole a lista do cardápio do jeito que você tiver: lanches, pratos, produtos com preço por tamanho (pizza, açaí…), bebidas, sobremesas e adicionais. A IA separa tudo e mostra para você conferir antes de cadastrar. Nada é salvo sem sua confirmação.
           </p>
           <textarea className="field font-mono text-xs" rows={14} value={text} onChange={(e) => setText(e.target.value)} placeholder={EXAMPLE} maxLength={20000} />
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -93,7 +93,7 @@ export function ImportDrawer({ pizzeriaId, onClose }: { pizzeriaId: string; onCl
                     {r.name}{" "}
                     <span className="rounded-full bg-sand px-2 py-0.5 text-[10px] font-bold text-muted">
                       {KIND_LABEL[r.kind]}
-                      {r.kind !== "extra" ? ` · ${r.category}` : r.pizza_only ? " · só pizza" : ""}
+                      {r.kind !== "extra" ? ` · ${r.category}` : r.pizza_only ? " · só por tamanho" : ""}
                     </span>
                   </p>
                   {r.description && <p className="text-xs text-muted">{r.description}</p>}

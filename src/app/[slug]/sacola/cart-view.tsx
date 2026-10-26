@@ -13,7 +13,7 @@ export function CartView({ slug }: { slug: string }) {
       <div className="card mx-auto mt-6 flex max-w-lg flex-col items-center gap-3 p-10 text-center">
         <ShoppingBag className="h-10 w-10 text-tomato" />
         <h1 className="text-2xl font-extrabold">Sua sacola está vazia</h1>
-        <p className="text-sm text-muted">Que tal começar por uma pizza quentinha?</p>
+        <p className="text-sm text-muted">Que tal dar uma olhada no cardápio?</p>
         <Link href={`/${slug}`} className="btn mt-2">
           Ver cardápio
         </Link>

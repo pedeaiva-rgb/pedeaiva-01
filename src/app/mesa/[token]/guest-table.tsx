@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useEffectEvent, useState } from "react";
 import { Bell, Check, ChefHat, Minus, Plus, Receipt, ShoppingBag, Trash2, UtensilsCrossed } from "lucide-react";
 import { toast } from "sonner";
@@ -309,6 +310,14 @@ function Shell({ store, table, children }: { store: string; table: string; child
         </div>
       </header>
       <main className="mx-auto max-w-xl px-4 pt-4">{children}</main>
+      <footer className="mx-auto mt-10 flex max-w-xl justify-center gap-4 px-4 text-xs text-muted">
+        <Link href="/sobre/termos" className="hover:underline">
+          Termos de uso
+        </Link>
+        <Link href="/sobre/privacidade" className="hover:underline">
+          Privacidade
+        </Link>
+      </footer>
     </div>
   );
 }

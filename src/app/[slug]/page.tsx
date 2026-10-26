@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Bike, Clock, MapPin, Phone, Pizza, Store } from "lucide-react";
+import { Bike, Clock, Layers, MapPin, Phone, Store } from "lucide-react";
 import { CartBar } from "@/components/store/cart-button";
 import { ProductImage } from "@/components/store/product-image";
 import { storeStatus } from "@/lib/hours";
@@ -149,7 +149,7 @@ function PizzaSizes({ slug, menu, pizzaIds }: { slug: string; menu: Menu; pizzaI
       {cards.map(({ s, from, count }) => (
         <Link key={s.id} href={`/${slug}/pizza/${s.id}`} className="card group flex flex-col p-4 transition hover:-translate-y-0.5">
           <span className="grid h-11 w-11 place-items-center rounded-2xl bg-charcoal text-dende">
-            <Pizza className="h-5 w-5" />
+            <Layers className="h-5 w-5" />
           </span>
           <p className="mt-3 font-brand text-xl leading-tight font-extrabold">{s.name}</p>
           <p className="text-xs text-muted">

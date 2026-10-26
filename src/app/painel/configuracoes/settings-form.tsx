@@ -37,7 +37,7 @@ export function SettingsForm({ pizzeria: pz, zones }: { pizzeria: Pizzeria; zone
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
 
   const save = async () => {
-    if (f.name.trim().length < 2) return toast.error("Informe o nome da pizzaria.");
+    if (f.name.trim().length < 2) return toast.error("Informe o nome da loja.");
     const min = parseMoney(f.min_order || "0");
     const fee = parseMoney(f.delivery_fee || "0");
     if (min == null) return toast.error("Pedido mínimo inválido.");
@@ -92,7 +92,7 @@ export function SettingsForm({ pizzeria: pz, zones }: { pizzeria: Pizzeria; zone
               <input className="field" value={f.name} onChange={set("name")} maxLength={80} />
             </Field>
             <Field label="Descrição (aparece no topo da loja)">
-              <textarea className="field" rows={2} value={f.description} onChange={set("description")} maxLength={300} placeholder="Ex.: Pizza de forno a lenha desde 1998" />
+              <textarea className="field" rows={2} value={f.description} onChange={set("description")} maxLength={300} placeholder="Ex.: Lanches artesanais desde 1998" />
             </Field>
             <Field label="Telefone / WhatsApp">
               <PhoneInput value={f.phone} onChange={(v) => setF({ ...f, phone: v })} />
@@ -122,7 +122,7 @@ export function SettingsForm({ pizzeria: pz, zones }: { pizzeria: Pizzeria; zone
                 <input className="field" inputMode="numeric" value={f.prep_minutes} onChange={set("prep_minutes")} />
               </Field>
             </div>
-            <Field label="Preço da pizza meio a meio">
+            <Field label="Preço do meio a meio (produtos por tamanho com mais de um sabor)">
               <select className="field" value={f.half_pricing} onChange={set("half_pricing")}>
                 <option value="mais_caro">Cobra o sabor mais caro</option>
                 <option value="media">Cobra a média dos sabores</option>

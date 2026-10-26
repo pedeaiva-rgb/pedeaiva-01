@@ -7,8 +7,8 @@ const jakarta = Plus_Jakarta_Sans({ subsets: ["latin"], variable: "--font-jakart
 const bricolage = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-bricolage" });
 
 export const metadata: Metadata = {
-  title: { default: "Pede aí e vá", template: "%s · Pede aí e vá" },
-  description: "Cardápio online, pedidos e PDV para pizzarias, em um só sistema.",
+  title: { default: "Pede aí, vá", template: "%s · Pede aí, vá" },
+  description: "Cardápio online, pedidos, mesas e PDV para delivery, restaurantes e lanchonetes, em um só sistema.",
 };
 
 export const viewport: Viewport = { themeColor: "#16181B" };

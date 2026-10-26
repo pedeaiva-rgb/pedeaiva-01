@@ -7,11 +7,12 @@ export function ProductImage({ src, alt, size = 160, className = "" }: { src: st
   }
   return (
     <div className={`grid aspect-square place-items-center rounded-2xl bg-cream ${className}`} style={{ width: "100%", maxWidth: size }} aria-hidden="true">
+      {/* Cúpula de servir: neutra, vale para qualquer tipo de comida. */}
       <svg viewBox="0 0 48 48" className="h-1/2 w-1/2">
-        <path d="M11 14 Q24 7 37 14" stroke="#F0A830" strokeWidth="4" strokeLinecap="round" fill="none" />
-        <path d="M12.5 17.5 L35.5 17.5 L24 37 Z" fill="#E4472D" />
-        <circle cx="21" cy="22.5" r="2.1" fill="#FFFCF6" />
-        <circle cx="27.5" cy="25" r="1.7" fill="#FFFCF6" />
+        <circle cx="24" cy="12.5" r="2.6" fill="#F0A830" />
+        <path d="M9 31 A15 15 0 0 1 39 31 Z" fill="#E4472D" />
+        <path d="M15.5 26 A9 9 0 0 1 21 19.5" stroke="#FFFCF6" strokeWidth="2.2" strokeLinecap="round" fill="none" />
+        <rect x="6" y="32" width="36" height="3.6" rx="1.8" fill="#16181B" />
       </svg>
     </div>
   );

@@ -78,7 +78,7 @@ export function ProductBuilder({
       return;
     }
     if (flavors.length >= max) {
-      toast.error(`A ${size?.name ?? "pizza"} permite até ${max} sabor(es).`);
+      toast.error(`O tamanho ${size?.name ?? ""} permite até ${max} sabor(es).`);
       return;
     }
     setFlavors([...flavors, fid]);

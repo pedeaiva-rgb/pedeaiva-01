@@ -318,6 +318,17 @@ export function Checkout({ slug, store, neighborhoods, pixOnline }: { slug: stri
             )}
           </button>
           <p className="text-[11px] text-muted">Os valores são calculados pela {store.name} com o cardápio atual.</p>
+          <p className="text-[11px] text-muted">
+            Ao fazer o pedido, você concorda com os{" "}
+            <Link href="/sobre/termos" target="_blank" className="underline">
+              Termos de uso
+            </Link>{" "}
+            e a{" "}
+            <Link href="/sobre/privacidade" target="_blank" className="underline">
+              Política de privacidade
+            </Link>
+            .
+          </p>
         </aside>
       </div>
     </form>

@@ -34,7 +34,7 @@ export async function placeRound(input: RoundInput): Promise<{ ok: true; number:
   if (!(await hasRole(tab.pizzeria_id, ACCESS.mesas))) return { ok: false, error: "Você não tem acesso às mesas." };
   const admin = adminClient();
   const menu = await loadMenu(admin, { id: tab.pizzeria_id });
-  if (!menu) return { ok: false, error: "Pizzaria não encontrada." };
+  if (!menu) return { ok: false, error: "Loja não encontrada." };
   const tableName = (tab.table as unknown as { name: string } | null)?.name ?? "?";
 
   const r = await submitOrder(

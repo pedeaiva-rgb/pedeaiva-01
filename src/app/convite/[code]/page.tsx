@@ -19,7 +19,7 @@ export default async function ConvitePage({ params }: PageProps<"/convite/[code]
 
   if (!info) {
     return (
-      <AuthCard title="Convite inválido" subtitle="Este link não vale mais ou foi digitado errado. Peça um link novo para a pizzaria.">
+      <AuthCard title="Convite inválido" subtitle="Este link não vale mais ou foi digitado errado. Peça um link novo para a loja.">
         <Link href="/" className="btn-ghost w-full">
           Voltar ao início
         </Link>
@@ -49,7 +49,7 @@ export default async function ConvitePage({ params }: PageProps<"/convite/[code]
   return (
     <AuthCard
       title={`Equipe da ${info.pizzeria_name}`}
-      subtitle="Preencha seus dados para pedir acesso. O responsável pela pizzaria libera e escolhe sua função."
+      subtitle="Preencha seus dados para pedir acesso. O responsável pela loja libera e escolhe sua função."
       footer={
         user ? undefined : (
           <>

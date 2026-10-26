@@ -1,4 +1,4 @@
-# Pede aí e vá
+# Pede aí, vá
 
 Cardápio online, pedidos e PDV para pizzarias. Next.js + Supabase.
 

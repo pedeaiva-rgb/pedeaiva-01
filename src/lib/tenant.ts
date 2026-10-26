@@ -36,7 +36,7 @@ export const getMemberships = cache(async (): Promise<Membership[]> => {
   if (!user) return [];
   const sb = await createClient();
   const { data, error } = await sb.from("members").select("role, pizzeria:pizzerias(*)").eq("user_id", user.id).order("created_at");
-  if (error) throw new Error("Não foi possível carregar suas pizzarias");
+  if (error) throw new Error("Não foi possível carregar suas lojas");
   const list = (data as unknown as { role: Role; pizzeria: Pizzeria | null }[]).filter((m) => m.pizzeria);
   // Permissões do gerente (sem a migração, valem as de antes).
   const managed = list.filter((m) => m.role === "manager").map((m) => m.pizzeria!.id);

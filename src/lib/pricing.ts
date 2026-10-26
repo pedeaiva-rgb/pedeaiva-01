@@ -30,7 +30,7 @@ export type PricedLine = {
 
 type PricingMenu = Pick<Menu, "products" | "sizes" | "prices" | "extras">;
 
-/** Preço da base da pizza conforme a regra de meio a meio da loja. */
+/** Preço da base (produto por tamanho) conforme a regra de meio a meio da loja. */
 export function pizzaBasePrice(flavorPrices: number[], rule: HalfPricing): number {
   if (flavorPrices.length === 0) throw new PricingError("Escolha ao menos um sabor");
   if (rule === "media") return Math.round(flavorPrices.reduce((a, p) => a + p, 0) / flavorPrices.length);
@@ -90,7 +90,7 @@ export function priceLine(line: CartLine, menu: PricingMenu, rule: HalfPricing):
   return {
     product_id: product.id,
     size_id: size.id,
-    name: priced.length > 1 ? `Pizza ${priced.map((f) => f.name).join(" / ")}` : product.name,
+    name: priced.length > 1 ? priced.map((f) => f.name).join(" / ") : product.name,
     size_name: size.name,
     flavors: priced.map(({ product_id, name, fraction }) => ({ product_id, name, fraction })),
     extras,

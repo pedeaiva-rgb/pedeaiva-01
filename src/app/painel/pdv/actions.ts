@@ -8,7 +8,7 @@ import { createClient, getUser } from "@/lib/supabase/server";
 import { ACCESS, hasRole } from "@/lib/tenant";
 
 export async function quotePdvOrder(pizzeriaId: string, input: QuoteInput): Promise<QuoteResult> {
-  if (!(await hasRole(pizzeriaId, ACCESS.pdv))) return { ok: false, error: "Você não tem acesso ao PDV desta pizzaria." };
+  if (!(await hasRole(pizzeriaId, ACCESS.pdv))) return { ok: false, error: "Você não tem acesso ao PDV desta loja." };
   return quoteFor({ id: pizzeriaId }, input, "balcao");
 }
 
@@ -20,9 +20,9 @@ export async function placePdvOrder(input: PdvOrderInput): Promise<PdvResult> {
   if (!parsed.success) return { ok: false, error: firstIssue(parsed.error) };
   const data = parsed.data;
   const user = await getUser();
-  if (!user || !(await hasRole(data.pizzeria_id, ACCESS.pdv))) return { ok: false, error: "Você não tem acesso ao PDV desta pizzaria." };
+  if (!user || !(await hasRole(data.pizzeria_id, ACCESS.pdv))) return { ok: false, error: "Você não tem acesso ao PDV desta loja." };
   const menu = await loadMenu(adminClient(), { id: data.pizzeria_id });
-  if (!menu) return { ok: false, error: "Pizzaria não encontrada" };
+  if (!menu) return { ok: false, error: "Loja não encontrada" };
 
   const r = await submitOrder(menu, data, data.channel, user.id);
   if (!r.ok || !data.received_now) return r;

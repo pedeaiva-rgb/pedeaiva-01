@@ -39,7 +39,7 @@ export function repeatItems(menu: Menu, o: PastOrder): CartItem[] {
         extra_ids: extras.map((e) => e.id),
         qty: i.qty,
         note: i.note,
-        name: flavors.length > 1 ? "Pizza meio a meio" : i.name,
+        name: flavors.length > 1 ? "Meio a meio" : i.name,
         detail,
         image_url: p.image_url,
         preview_unit_cents: i.unit_price_cents,
