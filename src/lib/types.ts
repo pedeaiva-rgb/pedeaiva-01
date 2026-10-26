@@ -87,6 +87,11 @@ export type Coupon = {
   active: boolean;
   show_in_store: boolean;
   description: string;
+  /** Só vale na primeira compra do cliente (conferido pelo telefone). */
+  first_order_only?: boolean;
+  /** Cupom pessoal (fidelidade, cashback, aniversário): só o dono usa. */
+  customer_id?: string | null;
+  origin?: "manual" | "fidelidade" | "cashback" | "aniversario";
 };
 
 /** Cupom em destaque na loja (o que o visitante pode ver). */

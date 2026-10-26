@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Bike, Clock, Layers, MapPin, Phone, Store } from "lucide-react";
+import { Bike, Clock, Layers, MapPin, Phone, Star, Store } from "lucide-react";
 import { CartBar } from "@/components/store/cart-button";
 import { ProductImage } from "@/components/store/product-image";
 import { storeStatus } from "@/lib/hours";
@@ -8,6 +8,7 @@ import { Promotions } from "@/components/store/promotions";
 import { getStoreCoupons, getStoreMenu } from "@/lib/menu";
 import { brl } from "@/lib/money";
 import { sellable, startingPrice } from "@/lib/pricing";
+import { publicClient } from "@/lib/supabase/server";
 import type { Menu } from "@/lib/types";
 
 function deliveryLine(menu: Menu) {
@@ -23,7 +24,14 @@ function deliveryLine(menu: Menu) {
 
 export default async function StorePage({ params }: PageProps<"/[slug]">) {
   const { slug } = await params;
-  const [menu, coupons] = await Promise.all([getStoreMenu(slug), getStoreCoupons(slug)]);
+  const [menu, coupons, rated] = await Promise.all([
+    getStoreMenu(slug),
+    getStoreCoupons(slug),
+    // Nota das avaliações (aparece com 3 ou mais nos últimos 180 dias; sem a migração, simplesmente não aparece).
+    publicClient()
+      .rpc("store_rating", { _slug: slug })
+      .then((r) => (r.error ? null : (r.data as { avg: number; count: number } | null))),
+  ]);
   if (!menu) notFound();
   const pz = menu.pizzeria;
   const status = storeStatus(pz);
@@ -38,6 +46,12 @@ export default async function StorePage({ params }: PageProps<"/[slug]">) {
         <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold ${status.open ? "bg-success text-paper" : "bg-graphite text-cream"}`}>
           <span className={`h-2 w-2 rounded-full ${status.open ? "bg-paper" : "bg-dende"}`} /> {status.open ? "Aberta para pedidos" : "Fechada agora"}
         </span>
+        {rated && (
+          <span className="relative ml-2 inline-flex items-center gap-1 rounded-full bg-graphite px-3 py-1 text-xs font-bold text-cream">
+            <Star className="h-3.5 w-3.5 fill-dende text-dende" /> {Number(rated.avg).toLocaleString("pt-BR", { minimumFractionDigits: 1 })}
+            <span className="font-normal text-cream/70">({rated.count} avaliações)</span>
+          </span>
+        )}
         <h1 className="relative mt-4 text-4xl leading-none font-extrabold md:text-6xl">{pz.name}</h1>
         {pz.description && <p className="relative mt-3 max-w-xl text-sm text-cream/80 md:text-base">{pz.description}</p>}
         <div className="relative mt-5 flex flex-wrap gap-x-5 gap-y-2 text-xs text-cream/80">

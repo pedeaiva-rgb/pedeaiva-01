@@ -718,7 +718,7 @@ describe("funções abertas", () => {
   // O que o visitante sem login pode chamar: loja, acompanhamento, convite e as telas por link (cozinha e balcão).
   const ANON_OK = [
     "counter_open", "counter_staff", "get_order_tracking", "has_role", "invite_info", "is_member", "kitchen_move", "kitchen_open",
-    "kitchen_tickets", "normalize_br_phone", "store_coupons", "valid_cpf",
+    "kitchen_tickets", "normalize_br_phone", "store_coupons", "store_rating", "submit_review", "valid_cpf",
     // Lê o caminho da foto no armazenamento (usada pelas regras de acesso das fotos dos produtos).
     "storage_pizzeria_id",
   ];
@@ -1020,5 +1020,93 @@ describe("pagamento online (Pix)", () => {
     expect((await one<{ s: string }>(SERVICE, "select status s from public.online_charges where id = $1", [bad])).s).toBe("erro");
     await db.query("update public.online_charges set status = 'estornado' where id = $1", [bad]);
     expect(await fails(SERVICE, "select public.settle_online_charge($1, 5000)", [bad])).toMatch(/não pode ser paga/);
+  });
+});
+
+describe("clientes, fidelidade e avaliações", () => {
+  const phone = () => `(71) 97${String(Math.floor(Math.random() * 1e7)).padStart(7, "0")}`;
+  const deliver = async (orderId: string) => {
+    await one(user(OWNER_A), "select public.transition_order($1, 'confirmado')", [orderId]);
+    await one(user(OWNER_A), "select public.transition_order($1, 'pronto')", [orderId]);
+    await one(user(OWNER_A), "select public.transition_order($1, 'entregue')", [orderId]);
+  };
+  const customerOf = (tel: string) =>
+    one<{ id: string }>(SERVICE, "select id from public.customers where pizzeria_id = $1 and phone = public.normalize_br_phone($2)", [pzA, tel]).then((x) => x.id);
+
+  it("cupom de primeira compra só vale uma vez por cliente", async () => {
+    const c = (await one<{ id: string }>(user(OWNER_A), "insert into public.coupons (pizzeria_id, code, discount_type, value, first_order_only) values ($1, 'PRIMEIRA', 'valor', 5, true) returning id", [pzA])).id;
+    const tel = phone();
+    await createOrder(orderPayload({ customer_phone: tel, coupon_id: c, coupon_code: "PRIMEIRA", birthday: "1990-05-12" }));
+    expect((await one<{ b: string }>(SERVICE, "select birthday::text b from public.customers where id = $1", [await customerOf(tel)])).b).toBe("1990-05-12");
+    expect(await fails(SERVICE, "select * from public.create_order($1)", [orderPayload({ customer_phone: tel, coupon_id: c, coupon_code: "PRIMEIRA" })])).toMatch(/primeira compra/);
+  });
+
+  it("cartão de selos gera cupom pessoal que só o dono usa", async () => {
+    await one(user(OWNER_A), "insert into public.loyalty_programs (pizzeria_id, active, mode, stamps_needed, reward_type, reward_value) values ($1, true, 'selos', 2, 'valor', 15) returning pizzeria_id", [pzA]);
+    // Caixa vê o programa, mas não muda.
+    expect(await rows(user(CASHIER_A), "update public.loyalty_programs set stamps_needed = 3 where pizzeria_id = $1 returning pizzeria_id", [pzA])).toHaveLength(0);
+    const tel = phone();
+    for (let i = 0; i < 2; i++) await deliver((await createOrder(orderPayload({ customer_phone: tel }))).order_id);
+    const cust = await customerOf(tel);
+    const cp = await one<{ id: string; code: string; origin: string; max_uses: number }>(SERVICE, "select id, code, origin, max_uses from public.coupons where customer_id = $1", [cust]);
+    expect(cp).toMatchObject({ origin: "fidelidade", max_uses: 1 });
+    expect(cp.code).toMatch(/^FIEL-[0-9A-F]{6}$/);
+    expect((await one<{ s: number }>(SERVICE, "select stamps s from public.loyalty_progress where customer_id = $1", [cust])).s).toBe(0);
+    // Outro telefone não usa; o dono usa.
+    expect(await fails(SERVICE, "select * from public.create_order($1)", [orderPayload({ customer_phone: phone(), coupon_id: cp.id, coupon_code: cp.code })])).toMatch(/Cupom pessoal/);
+    await createOrder(orderPayload({ customer_phone: tel, coupon_id: cp.id, coupon_code: cp.code }));
+    // Cupom pessoal não aparece na vitrine nem quando marcado.
+    await db.query("update public.coupons set show_in_store = true where id = $1", [cp.id]);
+    const slug = (await one<{ slug: string }>(SERVICE, "select slug from public.pizzerias where id = $1", [pzA])).slug;
+    expect((await rows<{ code: string }>(ANON, "select code from public.store_coupons($1)", [slug])).map((x) => x.code)).not.toContain(cp.code);
+  });
+
+  it("cashback gera cupom do valor e a lista de clientes soma os pedidos", async () => {
+    await db.query("update public.loyalty_programs set mode = 'cashback', cashback_pct = 10 where pizzeria_id = $1", [pzA]);
+    const tel = phone();
+    await deliver((await createOrder(orderPayload({ customer_phone: tel, total_cents: 5000 }))).order_id);
+    const cust = await customerOf(tel);
+    expect(await one(SERVICE, "select origin, value::float v from public.coupons where customer_id = $1", [cust])).toMatchObject({ origin: "cashback", v: 5 });
+    const st = await rows<{ id: string; orders: number; spent_cents: string | number }>(user(CASHIER_A), "select id, orders, spent_cents from public.customer_stats($1)", [pzA]);
+    expect(st.find((x) => x.id === cust)).toMatchObject({ orders: 1 }); expect(Number(st.find((x) => x.id === cust)!.spent_cents)).toBe(5000);
+    expect(await fails(user(KITCHEN_A), "select * from public.customer_stats($1)", [pzA])).toMatch(/Sem permissão/);
+    await db.query("update public.loyalty_programs set active = false where pizzeria_id = $1", [pzA]);
+  });
+
+  it("aniversário: dados do cliente e presente pessoal", async () => {
+    const tel = phone();
+    await createOrder(orderPayload({ customer_phone: tel }));
+    const cust = await customerOf(tel);
+    await one(user(CASHIER_A), "select public.update_customer($1, '1985-02-20', 'Gosta de borda recheada', false)", [cust]);
+    expect(await fails(user(KITCHEN_A), "select public.update_customer($1, null, null, false)", [cust])).toMatch(/Sem permissão/);
+    const code = (await one<{ c: string }>(user(CASHIER_A), "select public.birthday_coupon($1, 'percentual', 10) c", [cust])).c;
+    expect(code).toMatch(/^NIVER-/);
+    expect(await fails(user(CASHIER_A), "select public.birthday_coupon($1, 'percentual', 150)", [cust])).toMatch(/inválido/);
+  });
+
+  it("avaliação: só pedido entregue, uma vez, e aparece no acompanhamento", async () => {
+    const o = await createOrder(orderPayload({ customer_phone: phone() }));
+    expect(await fails(ANON, "select public.submit_review($1, 5)", [o.public_token])).toMatch(/entregue/);
+    await deliver(o.order_id);
+    let tr = (await one<{ t: { can_review: boolean } }>(ANON, "select public.get_order_tracking($1) t", [o.public_token])).t;
+    expect(tr.can_review).toBe(true);
+    await one(ANON, "select public.submit_review($1, 4, 'Chegou quentinha')", [o.public_token]);
+    await one(ANON, "select public.submit_review($1, 1, 'mudei de ideia')", [o.public_token]);
+    expect((await one<{ r: number }>(user(OWNER_A), "select rating r from public.order_reviews where order_id = $1", [o.order_id])).r).toBe(4);
+    tr = (await one<{ t: { can_review: boolean; review: { rating: number } } }>(ANON, "select public.get_order_tracking($1) t", [o.public_token])).t;
+    expect(tr).toMatchObject({ can_review: false, review: { rating: 4 } });
+    expect(await fails(ANON, "select * from public.order_reviews")).toMatch(/permission denied/);
+    expect(await fails(ANON, "select public.submit_review($1, 9)", [o.public_token])).toBeDefined();
+  });
+});
+
+describe("tela de clientes: cupons para a equipe", () => {
+  it("caixa vê prêmios do cliente e cupons ativos da loja; cozinha não", async () => {
+    const cust = (await one<{ id: string }>(SERVICE, "select id from public.customers where pizzeria_id = $1 order by created_at desc limit 1", [pzA])).id;
+    await one(user(OWNER_A), "select public.birthday_coupon($1, 'valor', 10)", [cust]);
+    expect((await rows<{ origin: string }>(user(CASHIER_A), "select origin from public.customer_coupons($1)", [cust])).some((x) => x.origin === "aniversario")).toBe(true);
+    const codes = (await rows<{ code: string }>(user(CASHIER_A), "select code from public.staff_coupons($1)", [pzA])).map((x) => x.code);
+    expect(codes.every((c) => !/^(NIVER|FIEL|CASH)-/.test(c))).toBe(true);
+    expect(await fails(user(KITCHEN_A), "select * from public.staff_coupons($1)", [pzA])).toMatch(/Sem permissão/);
   });
 });

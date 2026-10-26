@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Bike, Check, Clock, Phone, Receipt, XCircle } from "lucide-react";
+import { Bike, Check, Clock, Gift, Phone, Receipt, Star, XCircle } from "lucide-react";
 import { PavSymbol } from "@/components/brand/logo";
 import { SetupNotice } from "@/components/setup-notice";
 import type { LatLng } from "@/lib/geo";
@@ -10,6 +10,7 @@ import { publicClient } from "@/lib/supabase/server";
 import { supabaseConfigured } from "@/lib/supabase/env";
 import type { Fulfillment, OrderStatus, PaymentMethod, PaymentStatus } from "@/lib/types";
 import { AutoRefresh } from "./auto-refresh";
+import { ReviewBox } from "./review-box";
 import { TrackMap } from "./track-map";
 import { LIVE_TRACKING } from "@/lib/features";
 
@@ -34,7 +35,14 @@ type Tracking = {
   pizzeria: { name: string; slug: string; phone: string | null };
   items: { name: string; size_name: string | null; qty: number; subtotal_cents: number; extras: { name: string }[] }[];
   events: { status: OrderStatus; at: string }[];
+  review?: { rating: number } | null;
+  can_review?: boolean;
+  rewards?: { code: string; type: "valor" | "percentual"; value: number; ends_at: string | null; origin: string }[];
+  loyalty?: { stamps: number; needed: number; reward_type: "valor" | "percentual"; reward_value: number } | null;
 };
+
+const offText = (type: "valor" | "percentual", value: number) => (type === "percentual" ? `${Number(value)}% de desconto` : `${brl(Math.round(Number(value) * 100))} de desconto`);
+const dateBR = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 
 const time = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
 
@@ -148,6 +156,53 @@ export default async function TrackingPage({ params }: PageProps<"/pedido/[token
             );
           })}
         </ol>
+      )}
+
+      {t.can_review && <ReviewBox token={token} store={t.pizzeria.name} />}
+      {t.review && (
+        <p className="card mt-4 flex items-center justify-center gap-1 p-4 text-sm">
+          Sua avaliação: {Array.from({ length: 5 }, (_, i) => <Star key={i} className={`h-4 w-4 ${i < t.review!.rating ? "fill-dende text-dende" : "text-line"}`} />)} Obrigado!
+        </p>
+      )}
+
+      {(t.rewards?.length ?? 0) > 0 && (
+        <div className="card mt-4 space-y-2 p-5">
+          <p className="flex items-center gap-2 font-bold">
+            <Gift className="h-5 w-5 text-tomato" /> Você tem {t.rewards!.length === 1 ? "um presente" : `${t.rewards!.length} presentes`} na {t.pizzeria.name}
+          </p>
+          {t.rewards!.map((r) => (
+            <div key={r.code} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border-2 border-dashed border-tomato/40 bg-tomato-soft/40 p-3 text-sm">
+              <span>
+                <b className="font-mono text-base">{r.code}</b>
+                <span className="block text-xs text-muted">
+                  {offText(r.type, r.value)}
+                  {r.ends_at ? ` · vale até ${dateBR(r.ends_at)}` : ""} · só com o seu telefone
+                </span>
+              </span>
+              <Link href={`/${t.pizzeria.slug}`} className="btn !py-2 text-sm">
+                Usar no próximo pedido
+              </Link>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {t.loyalty && (
+        <div className="card mt-4 p-5 text-sm">
+          <p className="font-bold">Cartão fidelidade</p>
+          <div className="mt-2 flex flex-wrap gap-1.5" aria-label={`${t.loyalty.stamps} de ${t.loyalty.needed} pedidos`}>
+            {Array.from({ length: t.loyalty.needed }, (_, i) => (
+              <span key={i} className={`grid h-7 w-7 place-items-center rounded-full border-2 ${i < t.loyalty!.stamps ? "border-tomato bg-tomato text-paper" : "border-line"}`}>
+                {i < t.loyalty!.stamps ? <Check className="h-3.5 w-3.5" /> : null}
+              </span>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-muted">
+            {t.loyalty.needed - t.loyalty.stamps === 0
+              ? "Seu prêmio está a caminho!"
+              : `Faltam ${t.loyalty.needed - t.loyalty.stamps} pedido${t.loyalty.needed - t.loyalty.stamps === 1 ? "" : "s"} para ganhar ${offText(t.loyalty.reward_type, t.loyalty.reward_value)}. Conta quando o pedido é entregue.`}
+          </p>
+        </div>
       )}
 
       <div className="card mt-4 space-y-2 p-5 text-sm">

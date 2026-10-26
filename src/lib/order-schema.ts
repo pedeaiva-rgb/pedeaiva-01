@@ -45,6 +45,12 @@ export const siteOrderSchema = checkoutBase.extend({
   customer_phone: z.string().trim().max(25).refine((v) => normalizeBrPhone(v) !== null, PHONE_ERROR),
   /** Campo escondido: só robôs preenchem. */
   website: z.string().max(200).default(""),
+  /** Opcional: para a loja mandar um presente no aniversário. */
+  birthday: z
+    .string()
+    .regex(/^d{4}-d{2}-d{2}$/)
+    .or(z.literal(""))
+    .default(""),
 });
 
 export const pdvOrderSchema = checkoutBase.extend({

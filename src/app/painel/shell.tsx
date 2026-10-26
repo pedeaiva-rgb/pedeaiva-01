@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { Bike, ChartColumn, ChefHat, CreditCard, ExternalLink, KeyRound, LayoutDashboard, LogOut, Menu, Monitor, BookOpen, Receipt, Settings, Ticket, Users, UtensilsCrossed, Wallet, X, Zap } from "lucide-react";
+import { Bike, ChartColumn, ChefHat, Contact, CreditCard, ExternalLink, KeyRound, LayoutDashboard, LogOut, Menu, Monitor, BookOpen, Receipt, Settings, Ticket, Users, UtensilsCrossed, Wallet, X, Zap } from "lucide-react";
 import { PavLogo } from "@/components/brand/logo";
 import { ROLE_LABEL } from "@/lib/order-labels";
 import { areaAllowed, type ManagerPerms } from "@/lib/permissions";
@@ -14,7 +14,7 @@ import { CounterGuard } from "./counter-guard";
 /** Funções que entram pelo balcão com PIN (cozinha tem o link dela; entregador usa o celular). */
 const COUNTER_ROLES: Role[] = ["owner", "manager", "cashier", "attendant", "waiter"];
 
-type Area = "pedidos" | "cozinha" | "entregas" | "entregador" | "mesas" | "pdv" | "caixa" | "relatorios" | "pagamentos" | "cardapio" | "configuracoes" | "cupons" | "equipe" | "automacoes";
+type Area = "pedidos" | "cozinha" | "entregas" | "entregador" | "mesas" | "clientes" | "pdv" | "caixa" | "relatorios" | "pagamentos" | "cardapio" | "configuracoes" | "cupons" | "equipe" | "automacoes";
 type NavItem = { href: string; label: string; icon: typeof Receipt; area?: Area };
 /** Menu em grupos (sem título: o topo). Cada pessoa vê só os itens da função dela; grupo vazio some. */
 const NAV: { title: string | null; items: NavItem[] }[] = [
@@ -25,6 +25,7 @@ const NAV: { title: string | null; items: NavItem[] }[] = [
       { href: "/painel/pedidos", label: "Pedidos", icon: Receipt, area: "pedidos" },
       { href: "/painel/pdv", label: "PDV / Balcão", icon: Monitor, area: "pdv" },
       { href: "/painel/mesas", label: "Mesas", icon: UtensilsCrossed, area: "mesas" },
+      { href: "/painel/clientes", label: "Clientes", icon: Contact, area: "clientes" },
     ],
   },
   {

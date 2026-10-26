@@ -140,6 +140,7 @@ export async function prepareOrder(menu: Menu, data: SubmitInput, channel: Chann
     eta_min: q.delivery.ok ? (q.delivery.eta_min ?? "") : "",
     eta_max: q.delivery.ok ? (q.delivery.eta_max ?? "") : "",
     created_by: actorId ?? "",
+    birthday: "birthday" in data ? ((data as { birthday?: string }).birthday ?? "") : "",
     items: q.lines,
   };
   return { ok: true, payload, quote: q };

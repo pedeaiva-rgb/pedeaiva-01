@@ -35,12 +35,14 @@ export function Checkout({ slug, store, neighborhoods, pixOnline }: { slug: stri
     ["cartao", "Cartão", CreditCard],
     ["dinheiro", "Dinheiro", Banknote],
   ];
-  const [f, setF] = useState({ name: "", phone: "", street: "", number: "", complement: "", neighborhood: "", reference: "", change: "", notes: "", coupon: "", website: "" });
+  const [f, setF] = useState({ birthday: "", name: "", phone: "", street: "", number: "", complement: "", neighborhood: "", reference: "", change: "", notes: "", coupon: "", website: "" });
   const [location, setLocation] = useState<PickedLocation | null>(null);
   // O cupom aplicado fica guardado: vem da vitrine ("Usar") ou do botão Aplicar daqui.
   const [coupon, setCoupon] = useStoredCoupon(slug);
   const [typedCoupon, setTypedCoupon] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  // Data de hoje para o campo de nascimento (calculada uma vez).
+  const [today] = useState(() => new Date().toISOString().slice(0, 10));
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
 
   const lines = toLines(items);
@@ -97,6 +99,7 @@ export function Checkout({ slug, store, neighborhoods, pixOnline }: { slug: stri
       change_for_cents: changeCents,
       notes: f.notes,
       website: f.website,
+      birthday: f.birthday,
       location: mode === "entrega" ? location : null,
     };
     if (pay === "pix_online") {
@@ -131,6 +134,7 @@ export function Checkout({ slug, store, neighborhoods, pixOnline }: { slug: stri
         change_for_cents: changeCents,
         notes: f.notes,
         website: f.website,
+        birthday: f.birthday,
         location: mode === "entrega" ? location : null,
       });
       if (!r.ok) {
@@ -183,6 +187,9 @@ export function Checkout({ slug, store, neighborhoods, pixOnline }: { slug: stri
               </Field>
             </div>
             {f.phone.replace(/\D/g, "").length >= 10 && !phoneOk && <p className="text-xs font-semibold text-danger">{PHONE_ERROR}</p>}
+            <Field label="Data de nascimento (opcional)" hint="A loja pode te mandar um presente no seu aniversário.">
+              <input type="date" className="field !w-auto" value={f.birthday} onChange={set("birthday")} max={today} />
+            </Field>
             {/* Campo invisível contra robôs */}
             <input tabIndex={-1} autoComplete="off" aria-hidden="true" className="hidden" value={f.website} onChange={set("website")} name="website" />
           </section>

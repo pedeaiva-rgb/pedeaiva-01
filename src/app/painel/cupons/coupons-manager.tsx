@@ -12,7 +12,7 @@ import { normalizeCouponCode } from "@/lib/pricing";
 import { browserClient } from "@/lib/supabase/client";
 import type { Coupon } from "@/lib/types";
 
-const EMPTY = { code: "", type: "percentual" as Coupon["discount_type"], value: "", min: "", maxUses: "", start: "", end: "", show: false, description: "" };
+const EMPTY = { code: "", type: "percentual" as Coupon["discount_type"], value: "", min: "", maxUses: "", start: "", end: "", show: false, first: false, description: "" };
 const dateBR = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 /** Data do campo (AAAA-MM-DD) no começo ou no fim do dia em São Paulo. */
 const spDay = (d: string, end: boolean) => (d ? new Date(`${d}T${end ? "23:59:59" : "00:00:00"}-03:00`).toISOString() : null);
@@ -23,6 +23,7 @@ function describe(c: Coupon) {
   if (c.min_order_cents > 0) parts.push(`pedido mínimo ${brl(c.min_order_cents)}`);
   if (c.starts_at) parts.push(`a partir de ${dateBR(c.starts_at)}`);
   if (c.ends_at) parts.push(`até ${dateBR(c.ends_at)}`);
+  if (c.first_order_only) parts.push("só na primeira compra");
   return parts.join(" · ");
 }
 
@@ -35,12 +36,12 @@ function situation(c: Coupon) {
   return { label: "Valendo", cls: "bg-success-soft text-success" };
 }
 
-export function CouponsManager({ pizzeriaId, coupons }: { pizzeriaId: string; coupons: Coupon[] }) {
+export function CouponsManager({ pizzeriaId, coupons, personal }: { pizzeriaId: string; coupons: Coupon[]; personal: { active: number; used: number } }) {
   const router = useRouter();
   const sb = browserClient();
   const [f, setF] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
-  const set = (k: Exclude<keyof typeof EMPTY, "show">) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
+  const set = (k: Exclude<keyof typeof EMPTY, "show" | "first">) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
 
   const run = async (fn: () => PromiseLike<{ error: unknown }>, ok: string) => {
     setBusy(true);
@@ -80,6 +81,7 @@ export function CouponsManager({ pizzeriaId, coupons }: { pizzeriaId: string; co
           starts_at: spDay(f.start, false),
           ends_at: spDay(f.end, true),
           show_in_store: f.show,
+          first_order_only: f.first,
           description: f.description.trim(),
         }),
       `Cupom ${code} criado`,
@@ -149,6 +151,11 @@ export function CouponsManager({ pizzeriaId, coupons }: { pizzeriaId: string; co
               })}
             </ul>
           )}
+          {personal.active + personal.used > 0 && (
+            <p className="mt-3 rounded-xl bg-info-soft p-2 text-xs text-info">
+              Cupons pessoais (fidelidade, cashback e aniversário): {personal.active} valendo e {personal.used} já usados. Eles aparecem na ficha de cada cliente, em Clientes.
+            </p>
+          )}
           {coupons.some((c) => c.uses > 0) && <p className="mt-3 text-[11px] text-muted">Cupons que já foram usados não podem ser apagados, só pausados, para manter o histórico dos pedidos.</p>}
         </Panel>
 
@@ -188,6 +195,13 @@ export function CouponsManager({ pizzeriaId, coupons }: { pizzeriaId: string; co
                 <input type="date" className="field" value={f.end} onChange={set("end")} />
               </Field>
             </div>
+            <label className="flex items-start gap-2 rounded-2xl bg-sand/60 p-3 text-sm">
+              <input type="checkbox" className="mt-1" checked={f.first} onChange={(e) => setF({ ...f, first: e.target.checked })} />
+              <span>
+                <span className="font-semibold">Só na primeira compra</span>
+                <span className="block text-xs text-muted">Vale uma vez por cliente, para quem nunca pediu (conferido pelo telefone).</span>
+              </span>
+            </label>
             <label className="flex items-start gap-2 rounded-2xl bg-sand/60 p-3 text-sm">
               <input type="checkbox" className="mt-1" checked={f.show} onChange={(e) => setF({ ...f, show: e.target.checked })} />
               <span>
